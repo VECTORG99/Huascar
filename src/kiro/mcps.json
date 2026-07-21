@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "local-fs": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./target-repo"],
+      "description": "Permite al agente leer y escribir archivos en el repositorio destino."
+    },
+    "bash-terminal": {
+      "command": "npx",
+      "args": ["-y", "mcp-server-bash"],
+      "description": "Permite al agente correr tests, instalar dependencias o compilar el código."
+    },
+    "github-integration": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "description": "Permite al agente comentar en PRs o hacer merge."
+    }
+  }
+}
