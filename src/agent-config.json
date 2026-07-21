@@ -1,6 +1,0 @@
-{
-  "steering": { "name": "MockAgent" },
-  "rag": { "enabled": true },
-  "hooks": { "pre_message": "validate" },
-  "mcps": { "servers": ["local-fs"] }
-}

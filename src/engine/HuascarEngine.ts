@@ -1,5 +1,5 @@
 import fs from 'fs';
-import path from 'path';
+import { config } from '../config.js';
 import { agentHooks } from '../kiro/hooks.js';
 import { generateText } from 'ai';
 import { openai } from '@ai-sdk/openai';
@@ -30,9 +30,6 @@ interface ConnectedMcpClient {
   tools: { name: string; description?: string; inputSchema?: any }[];
 }
 
-const TOOL_RESULT_MAX = 8192;
-const MCP_TIMEOUT_MS = 30000;
-
 export class HuascarEngine {
   private steering: any;
   public activeRole: any;
@@ -41,14 +38,13 @@ export class HuascarEngine {
   private store: Store | null;
 
   constructor(roleKey: string, store?: Store) {
-    const steeringPath = path.resolve('./src/kiro/steering.json');
-    this.steering = JSON.parse(fs.readFileSync(steeringPath, 'utf8'));
+    this.steering = JSON.parse(fs.readFileSync(config.paths.steering, config.rag.encoding));
 
     if (!this.steering.roles[roleKey]) {
         throw new Error(`El rol '${roleKey}' no existe en steering.json`);
     }
     this.activeRole = this.steering.roles[roleKey];
-    this.rag = new RagEngine();
+    this.rag = new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding });
     this.store = store || null;
   }
 
@@ -62,15 +58,14 @@ export class HuascarEngine {
   }
 
   private async connectMcpServers(): Promise<void> {
-    const mcpsPath = path.resolve('./src/kiro/mcps.json');
-    if (!fs.existsSync(mcpsPath)) {
+    if (!fs.existsSync(config.paths.mcps)) {
       console.log('[HuascarEngine] mcps.json no encontrado, saltando MCP.');
       return;
     }
 
-    const config: McpServersConfig = JSON.parse(fs.readFileSync(mcpsPath, 'utf8'));
+    const mcpConfig: McpServersConfig = JSON.parse(fs.readFileSync(config.paths.mcps, config.rag.encoding));
 
-    for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+    for (const [name, serverConfig] of Object.entries(mcpConfig.mcpServers)) {
       try {
         console.log(`[HuascarEngine] Iniciando MCP server: "${name}" (${serverConfig.command})`);
 
@@ -78,7 +73,7 @@ export class HuascarEngine {
           command: serverConfig.command,
           args: serverConfig.args || [],
           env: this.resolveEnv(serverConfig.env),
-          stderr: 'ignore',
+          stderr: config.mcp.stderr,
         });
 
         const client = new Client(
@@ -105,19 +100,18 @@ export class HuascarEngine {
   }
 
   private loadRagSources(): void {
-    const ragPath = path.resolve('./src/kiro/rag.json');
-    if (!fs.existsSync(ragPath)) {
+    if (!fs.existsSync(config.paths.rag)) {
       console.log('[HuascarEngine] rag.json no encontrado, saltando RAG.');
       return;
     }
     try {
-      const config: RagConfig = JSON.parse(fs.readFileSync(ragPath, 'utf8'));
-      if (!Array.isArray(config.knowledge_bases)) {
+      const ragConfig: RagConfig = JSON.parse(fs.readFileSync(config.paths.rag, config.rag.encoding));
+      if (!Array.isArray(ragConfig.knowledge_bases)) {
         console.warn('[HuascarEngine] knowledge_bases no es un array, saltando RAG.');
         return;
       }
-      this.rag.loadSources(config.knowledge_bases);
-      console.log(`[HuascarEngine] RAG cargado: ${config.knowledge_bases.length} fuentes`);
+      this.rag.loadSources(ragConfig.knowledge_bases);
+      console.log(`[HuascarEngine] RAG cargado: ${ragConfig.knowledge_bases.length} fuentes`);
     } catch (err: any) {
       console.warn(`[HuascarEngine] Error cargando RAG: ${err.message}`);
     }
@@ -140,11 +134,11 @@ export class HuascarEngine {
     console.log(`[HuascarEngine] Tarea: ${task}`);
 
     try {
-      const hasApiKey = !!process.env.OPENAI_API_KEY;
+      const useMock = config.llm.mockMode || !config.hasApiKey;
 
       let mcpContext = '';
 
-      if (hasApiKey) {
+      if (!useMock) {
         await this.connectMcpServers();
 
         this.loadRagSources();
@@ -176,7 +170,7 @@ export class HuascarEngine {
       const ragContext = this.rag.getContext();
       const systemPrompt = this.activeRole.system_prompt + (ragContext ? '\n\n' + ragContext : '') + mcpContext;
 
-      const responseText = hasApiKey
+      const responseText = !useMock
         ? await this.runReActLoop(systemPrompt, task)
         : this.runMockReActLoop(task);
 
@@ -199,7 +193,7 @@ export class HuascarEngine {
 
 
   private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
-    const maxIterations = 3;
+    const maxIterations = config.react.maxIterations;
     let context = systemPrompt;
     const messages: { role: string; content: string }[] = [
       { role: 'user', content: task },
@@ -209,7 +203,7 @@ export class HuascarEngine {
       console.log(`\n[HuascarEngine] ReAct iteracion ${i + 1}/${maxIterations}`);
 
       const { text } = await generateText({
-        model: openai(process.env.MODEL_ID || 'gpt-4o'),
+        model: openai(config.llm.modelId),
         system: context,
         prompt: messages[messages.length - 1].content,
       });
@@ -230,24 +224,32 @@ export class HuascarEngine {
 
       const toolName = toolMatch[1].trim();
 
-      const argsMatch = text.match(/Argumentos:\s*(\{[\s\S]*?\})/);
+      // ponytail: brace-depth parser instead of regex, handles nested JSON
       let args: any = {};
-      if (argsMatch) {
-        try {
-          args = JSON.parse(argsMatch[1]);
-        } catch {
-          console.log(`[HuascarEngine] No se pudieron parsear los argumentos JSON para "${toolName}"`);
+      const argsLabel = 'Argumentos:';
+      const argsIdx = text.indexOf(argsLabel);
+      if (argsIdx !== -1) {
+        const start = argsIdx + argsLabel.length;
+        let depth = 0;
+        let end = -1;
+        for (let i = start; i < text.length; i++) {
+          const ch = text[i];
+          if (ch === '{') { if (depth === 0 && end === -1) end = i; depth++; }
+          else if (ch === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+        }
+        if (depth === 0 && end > start) {
+          try {
+            args = JSON.parse(text.slice(start, end));
+          } catch {
+            console.log(`[HuascarEngine] No se pudieron parsear los argumentos JSON para "${toolName}"`);
+          }
         }
       }
 
       console.log(`[HuascarEngine] Llamando herramienta: "${toolName}"`);
 
       // Hook de seguridad: validar herramienta real
-      const hookPayload = { command: `${toolName} ${JSON.stringify(args)}` };
-      const allowed = agentHooks.before_action("execute_bash", hookPayload);
-      if (!allowed) {
-        throw new Error(`HOOK TRIGGERED: Accion destructiva bloqueada por politica de seguridad.`);
-      }
+      agentHooks.before_action(toolName, args);
 
       let toolResult = `Error: herramienta "${toolName}" no encontrada en ningun servidor MCP`;
 
@@ -256,7 +258,7 @@ export class HuascarEngine {
         if (toolDef) {
           try {
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), MCP_TIMEOUT_MS);
+            const timeout = setTimeout(() => controller.abort(), config.react.mcpTimeoutMs);
             const result = await c.client.callTool({ name: toolName, arguments: args });
             clearTimeout(timeout);
             const content = (result as any).content || [];
@@ -265,8 +267,8 @@ export class HuascarEngine {
               .map((c: any) => c.text)
               .join('\n');
             // ponytail: truncate large tool results to avoid blowing context budget
-            if (toolResult.length > TOOL_RESULT_MAX) {
-              toolResult = toolResult.slice(0, TOOL_RESULT_MAX) + '\n... [truncado]';
+            if (toolResult.length > config.react.toolResultMaxChars) {
+              toolResult = toolResult.slice(0, config.react.toolResultMaxChars) + '\n... [truncado]';
             }
             console.log(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
           } catch (err: unknown) {
@@ -284,7 +286,7 @@ export class HuascarEngine {
     console.log(`[HuascarEngine] Maximo de iteraciones (${maxIterations}) alcanzado`);
 
     const { text } = await generateText({
-      model: openai(process.env.MODEL_ID || 'gpt-4o'),
+      model: openai(config.llm.modelId),
       system: context + '\n\nHas alcanzado el limite de iteraciones. Proporciona tu mejor respuesta final.',
       prompt: messages[messages.length - 1].content,
     });

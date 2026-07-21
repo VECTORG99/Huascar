@@ -1,31 +1,55 @@
-/**
- * Hooks de Seguridad y Human-in-the-Loop (Estilo Kiro)
- * Interceptan las acciones del agente antes de que interactúen con el sistema o el repositorio.
- */
+import fs from 'fs';
+import path from 'path';
+
+interface SecurityPolicy {
+  blocked_tool_patterns: string[];
+  blocked_args_substrings: Record<string, string[]>;
+}
+
+function loadPolicy(): SecurityPolicy {
+  const policyPath = process.env.SECURITY_POLICY_PATH || path.resolve('./src/kiro/security-policy.json');
+  try {
+    return JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+  } catch (err) {
+    console.error(`[SECURITY] Error cargando politica de seguridad desde ${policyPath}:`, err);
+    // Fail-closed: default to blocking everything if policy can't be loaded
+    return {
+      blocked_tool_patterns: ['.'],
+      blocked_args_substrings: {}
+    };
+  }
+}
+
+const policy = loadPolicy();
 
 export const agentHooks = {
-  // Hook de seguridad preventivo
-  before_action: (action: string, payload: any): boolean => {
-    const destructiveCommands = ['rm -rf', 'drop table', 'git push --force'];
-    
-    // Si el agente intenta ejecutar un comando de consola
-    if (action === "execute_bash") {
-      const isDestructive = destructiveCommands.some(cmd => payload.command?.includes(cmd));
-      if (isDestructive) {
-        console.error(`[HOOK ERROR] Acción destructiva bloqueada: ${payload.command}`);
-        throw new Error("HOOK TRIGGERED: Acción destructiva bloqueada por política de seguridad.");
+  before_action: (toolName: string, args: Record<string, unknown>): boolean => {
+    // Check if tool name matches blocked patterns
+    for (const pattern of policy.blocked_tool_patterns) {
+      if (toolName.includes(pattern)) {
+        console.error(`[HOOK ERROR] Herramienta bloqueada por politica de seguridad: ${toolName}`);
+        throw new Error(`HOOK TRIGGERED: Herramienta "${toolName}" bloqueada por politica de seguridad.`);
       }
     }
-    
-    console.log(`[HOOK SUCCESS] Autorizando acción segura: ${action}`);
+
+    // Check if args contain blocked substrings (for this specific tool)
+    const blockedArgs = policy.blocked_args_substrings[toolName];
+    if (blockedArgs) {
+      const serialized = JSON.stringify(args);
+      for (const substr of blockedArgs) {
+        if (serialized.includes(substr)) {
+          console.error(`[HOOK ERROR] Accion destructiva bloqueada en "${toolName}": ${substr}`);
+          throw new Error(`HOOK TRIGGERED: Accion destructiva bloqueada por politica de seguridad.`);
+        }
+      }
+    }
+
+    console.log(`[HOOK SUCCESS] Autorizando accion segura: ${toolName}`);
     return true;
   },
 
-  // Hook Human-in-the-Loop (HITL)
   on_commit: async (diffContext: string): Promise<string> => {
-    console.log("[HOOK PAUSE] Esperando aprobación del desarrollador para realizar el commit...");
-    // Aquí en la plataforma real se enviaría un WebSocket al Frontend
-    // para que el usuario presione "Aprobar" o "Rechazar".
-    return "PENDING_HUMAN_APPROVAL";
+    console.log('[HOOK PAUSE] Esperando aprobacion del desarrollador para realizar el commit...');
+    return 'PENDING_HUMAN_APPROVAL';
   }
 };

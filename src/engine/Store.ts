@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { config } from '../config.js';
 
 export interface ExecutionRecord {
   id: number;
@@ -15,7 +16,7 @@ export class Store {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath || process.env.HUASCAR_DB_PATH || path.resolve('./data/huascar.db');
+    this.dbPath = dbPath || config.paths.db;
     // Ensure directory exists
     const dir = path.dirname(this.dbPath);
     if (!fs.existsSync(dir)) {
@@ -46,7 +47,7 @@ export class Store {
     stmt.run(role, task, response);
   }
 
-  getHistory(limit: number = 20): ExecutionRecord[] {
+  getHistory(limit: number = config.store.historyLimit): ExecutionRecord[] {
     const stmt = this.db.prepare(
       'SELECT * FROM executions ORDER BY created_at DESC LIMIT ?'
     );

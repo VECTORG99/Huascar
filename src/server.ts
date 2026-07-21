@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { config } from './config.js';
 import { HuascarEngine } from './engine/HuascarEngine.js';
 import { Store } from './engine/Store.js';
 
@@ -12,7 +13,7 @@ const store = new Store();
 
 app.get('/api/history', (req, res) => {
     try {
-        const limit = parseInt(req.query.limit as string) || 20;
+        const limit = parseInt(req.query.limit as string) || config.store.historyLimit;
         const records = store.getHistory(limit);
         res.json({ history: records });
     } catch (error: unknown) {
@@ -40,9 +41,8 @@ app.post('/api/agent/execute', async (req, res) => {
     }
 });
 
-const PORT = process.env.PORT || 3001;
-const server = app.listen(PORT, () => {
-    console.log(`Huascar Backend corriendo en http://localhost:${PORT}`);
+const server = app.listen(config.server.port, config.server.host, () => {
+    console.log(`Huascar Backend corriendo en http://localhost:${config.server.port}`);
 });
 
 process.on('SIGTERM', () => {

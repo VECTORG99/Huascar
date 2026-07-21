@@ -1,0 +1,18 @@
+{
+  "blocked_tool_patterns": ["shell", "sudo"],
+  "blocked_args_substrings": {
+    "execute_bash": [
+      "rm -rf",
+      "rm -r -f",
+      "git push --force",
+      "git push -f",
+      "drop table",
+      "DROP TABLE",
+      "Drop Table",
+      "drop  table",
+      "format",
+      "mkfs",
+      "dd if="
+    ]
+  }
+}

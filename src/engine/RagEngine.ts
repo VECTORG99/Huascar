@@ -1,16 +1,22 @@
 import fs from 'fs';
 import path from 'path';
+import { config } from '../config.js';
 
 export type RagSource =
   | { type: 'local_file'; path: string }
   | { type: 'local_directory'; path: string; pattern: string }
   | { type: 'inline'; content: string };
 
-const MAX_CONTENT = 16_000;
-
 export class RagEngine {
   private sources: RagSource[] = [];
   private loadedContent: string[] = [];
+  private maxContentChars: number;
+  private encoding: BufferEncoding;
+
+  constructor(options?: { maxContentChars?: number; encoding?: BufferEncoding }) {
+    this.maxContentChars = options?.maxContentChars ?? config.rag.maxContentChars;
+    this.encoding = options?.encoding ?? config.rag.encoding;
+  }
 
   loadSources(sources: RagSource[]): void {
     this.sources = sources;
@@ -21,7 +27,7 @@ export class RagEngine {
         switch (source.type) {
           case 'local_file': {
             const resolved = path.resolve(source.path);
-            const content = fs.readFileSync(resolved, 'utf8');
+            const content = fs.readFileSync(resolved, this.encoding);
             this.loadedContent.push(`--- ${source.path} ---\n${content}`);
             break;
           }
@@ -31,7 +37,7 @@ export class RagEngine {
             for (const file of files) {
               const filePath = path.join(resolved, file);
               try {
-                const content = fs.readFileSync(filePath, 'utf8');
+                const content = fs.readFileSync(filePath, this.encoding);
                 this.loadedContent.push(`--- ${path.join(source.path, file)} ---\n${content}`);
               } catch (err: unknown) {
                 console.warn(`[RagEngine] Error leyendo ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
@@ -54,8 +60,8 @@ export class RagEngine {
     if (this.loadedContent.length === 0) return '';
 
     let combined = this.loadedContent.join('\n\n');
-    if (combined.length > MAX_CONTENT) {
-      combined = combined.slice(0, MAX_CONTENT) + '\n\n... [truncado - el contenido excede el maximo]';
+    if (combined.length > this.maxContentChars) {
+      combined = combined.slice(0, this.maxContentChars) + '\n\n... [truncado - el contenido excede el maximo]';
     }
     return `## Contexto RAG (documentos cargados):\n\n${combined}`;
   }
