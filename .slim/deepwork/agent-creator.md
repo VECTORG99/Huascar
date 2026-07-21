@@ -1,8 +1,8 @@
 # Deepwork: Agent Creator (Cuestionario Vite + React + JS)
 
-## Fase 1: Scaffold + Step Container ✅
-## Fase 2: Build all 7 question screens ✅
-## Fase 3: Backend integration + agent-config.json ✅
+## Fase 1: Scaffold + Step Container 
+## Fase 2: Build all 7 question screens 
+## Fase 3: Backend integration + agent-config.json 
 
 ### Oracle Remediations (all applied)
 1. CRITICAL: Tailwind CSS no estaba configurado → Instalado @tailwindcss/vite + plugin

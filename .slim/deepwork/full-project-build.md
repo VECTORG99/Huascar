@@ -4,9 +4,9 @@
 Construir el proyecto completo (Fullstack) basándose en la arquitectura previa.
 
 ## Fases Completadas
-1. ✅ **Fase 1: Backend LLM Integration** — Vercel AI SDK integrado con fallback.
-2. ✅ **Fase 2: Frontend Scaffold (Next.js + Tailwind)** — Dashboard Builder con terminal.
-3. ✅ **Fase 3: E2E Integration** — Frontend ↔ Backend conectado y probado.
+1.  **Fase 1: Backend LLM Integration** — Vercel AI SDK integrado con fallback.
+2.  **Fase 2: Frontend Scaffold (Next.js + Tailwind)** — Dashboard Builder con terminal.
+3.  **Fase 3: E2E Integration** — Frontend ↔ Backend conectado y probado.
 
 ### Oracle Reviews
 - Fase 1: PASS — Hardcoded model → env var fix aplicado.

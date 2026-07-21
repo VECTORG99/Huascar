@@ -6,7 +6,7 @@ export default function CompletionScreen() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center px-6">
       <div className="text-center max-w-md">
-        <div className="text-6xl mb-6">✅</div>
+        <div className="text-5xl mb-6 font-bold text-emerald-400">DONE</div>
         <h2 className="text-3xl font-bold mb-4 text-emerald-400">
           Agente Creado
         </h2>

@@ -29,5 +29,5 @@ app.post('/api/agent/execute', async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-    console.log(`🚀 Huascar Backend corriendo en http://localhost:${PORT}`);
+    console.log(`Huascar Backend corriendo en http://localhost:${PORT}`);
 });

@@ -1,7 +1,7 @@
 export default function WelcomeStep() {
   return (
     <div className="text-center py-12">
-      <div className="text-6xl mb-6">🤖</div>
+      <div className="text-5xl mb-6 font-bold text-emerald-400">&lt;Agent /&gt;</div>
       <h2 className="text-3xl font-bold mb-4">
         Crea tu Agente de Productividad
       </h2>
