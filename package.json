@@ -1,5 +1,5 @@
 {
-  "name": "kiro-mock",
+  "name": "huascar",
   "private": true,
   "scripts": {
     "build": "tsc",
