@@ -7,6 +7,7 @@ import KnowledgeStep from "./steps/KnowledgeStep";
 import ToolsStep from "./steps/ToolsStep";
 import SecurityStep from "./steps/SecurityStep";
 import ReviewStep from "./steps/ReviewStep";
+import CompletionScreen from "./steps/CompletionScreen";
 
 const STEP_COMPONENTS = [
   WelcomeStep,
@@ -19,7 +20,10 @@ const STEP_COMPONENTS = [
 ];
 
 function StepRenderer() {
-  const { currentStep } = useStep();
+  const { currentStep, completed } = useStep();
+
+  if (completed) return <CompletionScreen />;
+
   const Component = STEP_COMPONENTS[currentStep];
   return (
     <StepContainer>

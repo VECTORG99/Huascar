@@ -1,7 +1,4 @@
-import { useStep } from "../context/StepContext";
-
 export default function WelcomeStep() {
-  const { nextStep } = useStep();
   return (
     <div className="text-center py-12">
       <div className="text-6xl mb-6">🤖</div>
@@ -30,12 +27,7 @@ export default function WelcomeStep() {
           <div className="text-sm text-gray-400">A&ntilde;ade seguridad</div>
         </div>
       </div>
-      <button
-        onClick={nextStep}
-        className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 px-8 rounded-lg transition"
-      >
-        Comenzar
-      </button>
+      <p className="text-gray-500 text-sm">Presiona "Siguiente" para comenzar</p>
     </div>
   );
 }
