@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { agentHooks } from '../kiro/hooks.js';
+import { generateText } from 'ai';
+import { openai } from '@ai-sdk/openai';
 
 export class HuascarEngine {
   private steering: any;
@@ -34,12 +36,26 @@ export class HuascarEngine {
         // 2. Ejecutar Guardrail (Hook de seguridad)
         agentHooks.before_action("execute_bash", toolPayload);
         
-        // 3. Simulación de la respuesta exitosa del LLM
+        // 3. Llamada al LLM si hay API key, sino fallback
+        let responseText = "He ejecutado las herramientas permitidas. La tarea se completó con éxito basándome en mi System Prompt.";
+        
+        if (process.env.OPENAI_API_KEY) {
+            console.log(`[HuascarEngine] 🔑 API Key detectada. Llamando a OpenAI...`);
+            const { text } = await generateText({
+                model: openai(process.env.MODEL_ID || 'gpt-4o'),
+                system: this.activeRole.system_prompt,
+                prompt: task,
+            });
+            responseText = text;
+        } else {
+            console.log(`[HuascarEngine] ⚠️ No se encontró OPENAI_API_KEY. Usando respuesta simulada.`);
+        }
+
         return {
             status: "success",
             agent_role: this.activeRole.name,
             action_taken: simulatedCommand,
-            response: "He ejecutado las herramientas permitidas. La tarea se completó con éxito basándome en mi System Prompt."
+            response: responseText
         };
 
     } catch (error: any) {
