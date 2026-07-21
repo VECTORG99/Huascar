@@ -11,6 +11,31 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10kb' }));
 
+// --- Monitoring ---
+const startTime = Date.now();
+const metrics = { totalRequests: 0, requestsByPath: {} as Record<string, number>, errorsByPath: {} as Record<string, number> };
+
+app.use((req, res, next) => {
+  const reqId = crypto.randomUUID().slice(0, 8);
+  const t0 = Date.now();
+  metrics.totalRequests++;
+  metrics.requestsByPath[req.path] = (metrics.requestsByPath[req.path] || 0) + 1;
+
+  res.on('finish', () => {
+    const duration = Date.now() - t0;
+    const line = { t: new Date().toISOString(), reqId, method: req.method, path: req.path, status: res.statusCode, duration, len: res.get('content-length') || 0 };
+    console.log(JSON.stringify(line));
+    if (res.statusCode >= 400) metrics.errorsByPath[req.path] = (metrics.errorsByPath[req.path] || 0) + 1;
+  });
+  next();
+});
+
+app.get('/api/metrics', (req, res) => {
+  const uptime = Math.floor((Date.now() - startTime) / 1000);
+  res.json({ uptime, totalRequests: metrics.totalRequests, requestsByPath: metrics.requestsByPath, errorsByPath: metrics.errorsByPath });
+});
+// ---
+
 const store = new Store();
 
 // In-memory store for HITL approvals (replace with DB in production)
