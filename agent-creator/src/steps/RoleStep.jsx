@@ -3,7 +3,7 @@ import { useStep } from "../context/StepContext";
 const ROLES = [
   { id: "PR_REVIEWER", name: "Revisor de PR", desc: "Analiza pull requests buscando vulnerabilidades y malas prácticas." },
   { id: "SCAFFOLDER", name: "Generador de Código Base", desc: "Crea estructuras de proyecto, módulos y boilerplate." },
-  { id: "CUSTOM", name: "Rol Personalizado", desc: "Describe t&uacute; mismo el rol del agente." },
+  { id: "CUSTOM", name: "Rol Personalizado", desc: "Describe tú mismo el rol del agente." },
 ];
 
 export default function RoleStep() {
@@ -11,7 +11,7 @@ export default function RoleStep() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-2">&iquest;Qu&eacute; rol tendr&aacute; tu agente?</h2>
+      <h2 className="text-2xl font-bold mb-2">¿Qué rol tendrá tu agente?</h2>
       <p className="text-gray-400 mb-6">
         El rol define la personalidad y el comportamiento del agente.
       </p>
@@ -35,7 +35,7 @@ export default function RoleStep() {
               className="sr-only"
             />
             <div className="font-medium">{r.name}</div>
-            <div className="text-sm text-gray-400" dangerouslySetInnerHTML={{ __html: r.desc }} />
+            <div className="text-sm text-gray-400">{r.desc}</div>
           </label>
         ))}
       </div>

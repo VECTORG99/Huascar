@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useCallback } from "react";
 
 const StepContext = createContext();
 
@@ -24,10 +24,17 @@ const INITIAL_ANSWERS = {
 export function StepProvider({ children }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState(INITIAL_ANSWERS);
+  const [validations, setValidations] = useState({});
 
   const updateAnswer = (key, value) => {
     setAnswers((prev) => ({ ...prev, [key]: value }));
   };
+
+  const registerValidation = useCallback((stepId, fn) => {
+    setValidations((prev) => ({ ...prev, [stepId]: fn }));
+  }, []);
+
+  const canProceed = validations[STEPS[currentStep]?.id]?.() ?? true;
 
   const nextStep = () => setCurrentStep((p) => Math.min(p + 1, STEPS.length - 1));
   const prevStep = () => setCurrentStep((p) => Math.max(p - 1, 0));
@@ -35,12 +42,9 @@ export function StepProvider({ children }) {
   return (
     <StepContext.Provider
       value={{
-        currentStep,
-        STEPS,
-        answers,
-        updateAnswer,
-        nextStep,
-        prevStep,
+        currentStep, STEPS, answers, updateAnswer,
+        registerValidation, canProceed,
+        nextStep, prevStep,
         isFirst: currentStep === 0,
         isLast: currentStep === STEPS.length - 1,
       }}

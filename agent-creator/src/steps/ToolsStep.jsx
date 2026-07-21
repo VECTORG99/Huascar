@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useStep } from "../context/StepContext";
 
 const TOOLS = [
@@ -7,7 +8,13 @@ const TOOLS = [
 ];
 
 export default function ToolsStep() {
-  const { answers, updateAnswer } = useStep();
+  const { answers, updateAnswer, registerValidation } = useStep();
+
+  const anyToolSelected = Object.values(answers.tools).some(Boolean);
+
+  useEffect(() => {
+    registerValidation("tools", () => anyToolSelected);
+  }, [anyToolSelected, registerValidation]);
 
   const toggleTool = (id) => {
     updateAnswer("tools", {
@@ -18,7 +25,7 @@ export default function ToolsStep() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-2">&iquest;Qu&eacute; herramientas puede usar tu agente?</h2>
+      <h2 className="text-2xl font-bold mb-2">¿Qué herramientas puede usar tu agente?</h2>
       <p className="text-gray-400 mb-6">
         Las herramientas (MCPs) le permiten al agente interactuar con tu entorno.
       </p>
@@ -47,7 +54,7 @@ export default function ToolsStep() {
         ))}
       </div>
 
-      {!Object.values(answers.tools).some(Boolean) && (
+      {!anyToolSelected && (
         <p className="text-yellow-500 text-sm mt-4">
           Selecciona al menos una herramienta para que el agente pueda trabajar.
         </p>

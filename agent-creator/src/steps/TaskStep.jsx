@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useStep } from "../context/StepContext";
 
 const TASK_EXAMPLES = [
@@ -8,11 +9,15 @@ const TASK_EXAMPLES = [
 ];
 
 export default function TaskStep() {
-  const { answers, updateAnswer } = useStep();
+  const { answers, updateAnswer, registerValidation } = useStep();
+
+  useEffect(() => {
+    registerValidation("task", () => answers.task.trim().length > 0);
+  }, [answers.task, registerValidation]);
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-2">&iquest;Qu&eacute; tarea debe automatizar?</h2>
+      <h2 className="text-2xl font-bold mb-2">¿Qué tarea debe automatizar?</h2>
       <p className="text-gray-400 mb-6">
         Describe la tarea repetitiva que quieres que el agente haga por ti.
       </p>

@@ -1,7 +1,7 @@
 import { useStep } from "../context/StepContext";
 
 export default function StepContainer({ children }) {
-  const { currentStep, STEPS, nextStep, prevStep, isFirst, isLast } = useStep();
+  const { currentStep, STEPS, nextStep, prevStep, isFirst, isLast, canProceed } = useStep();
   const progress = ((currentStep + 1) / STEPS.length) * 100;
 
   return (
@@ -51,7 +51,8 @@ export default function StepContainer({ children }) {
           </button>
           <button
             onClick={nextStep}
-            className="px-6 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition"
+            disabled={!canProceed && !isLast}
+            className="px-6 py-2 rounded-lg bg-emerald-600 text-white disabled:bg-gray-700 disabled:cursor-not-allowed hover:bg-emerald-500 transition"
           >
             {isLast ? "Finalizar" : "Siguiente &rarr;"}
           </button>

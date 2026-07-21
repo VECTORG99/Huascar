@@ -38,7 +38,6 @@ export default function ReviewStep() {
     setLoading(true);
     const config = buildAgentConfig();
 
-    // Try to send to backend, fallback to local generation
     try {
       const res = await fetch("http://localhost:3001/api/agent/execute", {
         method: "POST",
@@ -48,6 +47,11 @@ export default function ReviewStep() {
           role: answers.role === "CUSTOM" ? answers.roleCustom : answers.role,
         }),
       });
+
+      if (!res.ok) {
+        throw new Error(`Backend respondió con ${res.status}`);
+      }
+
       const data = await res.json();
       setGenerated({ config, backendResponse: data });
     } catch {
@@ -61,7 +65,7 @@ export default function ReviewStep() {
     <div>
       <h2 className="text-2xl font-bold mb-2">Revisa tu agente</h2>
       <p className="text-gray-400 mb-6">
-        Este es el resumen de la configuraci&oacute;n de tu agente Huascar.
+        Este es el resumen de la configuración de tu agente Huascar.
       </p>
 
       <div className="space-y-3 mb-6">
@@ -87,8 +91,8 @@ export default function ReviewStep() {
         <div className="bg-gray-900 p-4 rounded-lg border border-gray-800">
           <span className="text-sm text-gray-500">Seguridad</span>
           <div className="font-medium">
-            {answers.security.requireApproval && "Aprobaci&oacute;n humana "}
-            {answers.security.blockDestructive && "+ Protecci&oacute;n destructiva"}
+            {answers.security.requireApproval && "Aprobación humana "}
+            {answers.security.blockDestructive && "+ Protección destructiva"}
           </div>
         </div>
       </div>
@@ -98,14 +102,14 @@ export default function ReviewStep() {
         disabled={loading}
         className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 px-8 rounded-lg transition"
       >
-        {loading ? "Generando agente..." : "Generar Configuraci&oacute;n"}
+        {loading ? "Generando agente..." : "Generar Configuración"}
       </button>
 
       {generated && (
         <div className="mt-6 space-y-4">
           <div className="bg-black border border-emerald-800 rounded-lg p-4">
             <h3 className="text-sm font-medium text-emerald-400 mb-2">
-              Configuraci&oacute;n Generada
+              Configuración Generada
             </h3>
             <pre className="text-xs text-emerald-300 font-mono overflow-x-auto">
               {JSON.stringify(generated.config, null, 2)}
