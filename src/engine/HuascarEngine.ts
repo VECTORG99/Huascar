@@ -27,7 +27,7 @@ interface ConnectedMcpClient {
   name: string;
   client: Client;
   transport: StdioClientTransport;
-  tools: { name: string; description?: string; inputSchema?: any }[];
+  tools: { name: string; description?: string; inputSchema?: unknown }[];
 }
 
 export interface AgentConfig {
@@ -39,9 +39,19 @@ export interface AgentConfig {
   };
 }
 
+interface SteeringRole {
+  name: string;
+  system_prompt: string;
+  temperature: number;
+}
+
+interface SteeringConfig {
+  roles: Record<string, SteeringRole>;
+}
+
 export class HuascarEngine {
-  private steering: any;
-  public activeRole: any;
+  private steering: SteeringConfig;
+  public activeRole!: SteeringRole;
   private mcpClients: ConnectedMcpClient[] = [];
   private rag: RagEngine;
   private store: Store | null;
@@ -63,6 +73,18 @@ export class HuascarEngine {
     return resolved;
   }
 
+  private async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`MCP ${label} timeout after ${ms}ms`)), ms);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   private async connectMcpServers(): Promise<void> {
     if (!fs.existsSync(config.paths.mcps)) {
       console.log('[HuascarEngine] mcps.json no encontrado, saltando MCP.');
@@ -72,24 +94,25 @@ export class HuascarEngine {
     const mcpConfig: McpServersConfig = JSON.parse(fs.readFileSync(config.paths.mcps, config.rag.encoding));
 
     for (const [name, serverConfig] of Object.entries(mcpConfig.mcpServers)) {
+      let transport: StdioClientTransport | undefined;
+      let client: Client | undefined;
       try {
         console.log(`[HuascarEngine] Iniciando MCP server: "${name}" (${serverConfig.command})`);
 
-        const transport = new StdioClientTransport({
+        transport = new StdioClientTransport({
           command: serverConfig.command,
           args: serverConfig.args || [],
           env: this.resolveEnv(serverConfig.env),
           stderr: config.mcp.stderr,
         });
 
-        const client = new Client(
+        client = new Client(
           { name: 'huascar-engine', version: '1.0.0' },
           { capabilities: {} },
         );
 
-        await client.connect(transport);
-
-        const toolsResult = await client.listTools();
+        await this.withTimeout(client.connect(transport), config.react.mcpTimeoutMs, 'connect');
+        const toolsResult = await this.withTimeout(client.listTools(), config.react.mcpTimeoutMs, 'listTools');
         const tools = (toolsResult.tools || []).map(t => ({
           name: t.name,
           description: t.description,
@@ -101,6 +124,9 @@ export class HuascarEngine {
         this.mcpClients.push({ name, client, transport, tools });
       } catch (err: unknown) {
         console.error(`[HuascarEngine] Error conectando MCP "${name}": ${err instanceof Error ? err.message : String(err)}`);
+        // Cleanup zombie MCP processes on timeout/failure
+        try { if (transport) await transport.close(); } catch { /* ignore */ }
+        try { if (client) client.close(); } catch { /* ignore */ }
       }
     }
   }
@@ -162,8 +188,9 @@ export class HuascarEngine {
         if (agentConfig) {
           // Filter MCP tools to only those selected by user
           if (agentConfig.tools && agentConfig.tools.length > 0) {
+            const selectedTools = agentConfig.tools;
             for (const c of this.mcpClients) {
-              c.tools = c.tools.filter(t => agentConfig.tools!.includes(t.name));
+              c.tools = c.tools.filter(t => selectedTools.includes(t.name));
             }
           }
           // Add knowledge sources from config
@@ -177,8 +204,9 @@ export class HuascarEngine {
           for (const c of this.mcpClients) {
             for (const tool of c.tools) {
               mcpContext += `- ${tool.name}: ${tool.description || 'Sin descripción'}\n`;
-              if (tool.inputSchema?.properties) {
-                const props = Object.keys(tool.inputSchema.properties).join(', ');
+              const schema = tool.inputSchema as { properties?: Record<string, unknown> } | undefined;
+              if (schema?.properties) {
+                const props = Object.keys(schema.properties).join(', ');
                 mcpContext += `  Parametros: ${props}\n`;
               }
             }
@@ -290,10 +318,15 @@ export class HuascarEngine {
             const timeout = setTimeout(() => controller.abort(), config.react.mcpTimeoutMs);
             const result = await c.client.callTool({ name: toolName, arguments: args });
             clearTimeout(timeout);
-            const content = (result as any).content || [];
-            toolResult = content
-              .filter((c: any) => c.type === 'text')
-              .map((c: any) => c.text)
+            const resultContent = result.content as { type: string; text?: string }[] | undefined;
+            if (!resultContent) {
+              toolResult = `Error: resultado sin contenido de "${toolName}"`;
+              console.log(`[HuascarEngine] Herramienta "${toolName}" retorno resultado sin contenido`);
+              break;
+            }
+            toolResult = resultContent
+              .filter(c => c.type === 'text')
+              .map(c => c.text ?? '')
               .join('\n');
             // ponytail: truncate large tool results to avoid blowing context budget
             if (toolResult.length > config.react.toolResultMaxChars) {

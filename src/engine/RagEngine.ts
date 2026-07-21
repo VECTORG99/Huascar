@@ -6,7 +6,9 @@ import { config } from '../config.js';
 // ponytail: blocklist-based SSRF prevention. Upgrade to DNS-resolution check if deployed publicly.
 const BLOCKED_HOSTS = [
   'localhost', '127.0.0.1', '::1', '0.0.0.0',
+  '::ffff:127.0.0.1', '::ffff:0.0.0.0',
   '169.254.169.254', 'metadata.google.internal',
+  '::ffff:a9fe:a9fe',
 ];
 
 function isBlockedUrl(urlStr: string): boolean {
@@ -25,6 +27,13 @@ export type RagSource =
   | { type: 'local_directory'; path: string; pattern: string }
   | { type: 'inline'; content: string }
   | { type: 'web_url'; url: string };
+
+// ponytail: basic path traversal guard. Upgrade to configurable allow-list if needed.
+const PROJECT_ROOT = path.resolve('.');
+function isPathSafe(target: string): boolean {
+  const resolved = path.resolve(target);
+  return resolved === PROJECT_ROOT || resolved.startsWith(PROJECT_ROOT + path.sep);
+}
 
 export class RagEngine {
   private sources: RagSource[] = [];
@@ -54,12 +63,20 @@ export class RagEngine {
       try {
         switch (source.type) {
           case 'local_file': {
+            if (!isPathSafe(source.path)) {
+              console.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
+              break;
+            }
             const resolved = path.resolve(source.path);
             const content = fs.readFileSync(resolved, this.encoding);
             this.loadedContent.push(this.wrapSnippet(source.path, content));
             break;
           }
           case 'local_directory': {
+            if (!isPathSafe(source.path)) {
+              console.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
+              break;
+            }
             const resolved = path.resolve(source.path);
             const files = fs.readdirSync(resolved).filter(f => f.endsWith(source.pattern.replace('*.', '.')));
             for (const file of files) {
@@ -86,24 +103,22 @@ export class RagEngine {
               console.warn(`[RagEngine] URL bloqueada por seguridad: ${source.url}`);
               break;
             }
+            let timeout: ReturnType<typeof setTimeout> | undefined;
             try {
               const abort = new AbortController();
-              const timeout = setTimeout(() => abort.abort(), 10000);
+              timeout = setTimeout(() => abort.abort(), 10000);
               const response = await fetch(source.url, { signal: abort.signal, redirect: 'error' });
               if (!response.ok) {
                 console.warn(`[RagEngine] Error fetching ${source.url}: HTTP ${response.status}`);
-                clearTimeout(timeout);
                 break;
               }
               // Check content-length header before buffering
               const contentLen = response.headers.get('content-length');
               if (contentLen && parseInt(contentLen, 10) > 512 * 1024) {
                 console.warn(`[RagEngine] URL ${source.url} demasiado grande (${contentLen} bytes), saltando.`);
-                clearTimeout(timeout);
                 break;
               }
               const html = await response.text();
-              clearTimeout(timeout);
               // Basic text extraction: strip HTML tags
               const text = html
                 .replace(/<!--[\s\S]*?-->/g, '')
@@ -116,8 +131,8 @@ export class RagEngine {
               if (text) {
                 this.loadedContent.push(this.wrapSnippet(`URL: ${source.url}`, text));
               }
-            } catch (err: unknown) {
-              console.warn(`[RagEngine] Error fetching ${source.url}: ${err instanceof Error ? err.message : String(err)}`);
+            } finally {
+              if (timeout) clearTimeout(timeout);
             }
             break;
           }
@@ -127,7 +142,8 @@ export class RagEngine {
           }
         }
       } catch (err: unknown) {
-        console.warn(`[RagEngine] Error procesando fuente ${source.type}: ${err instanceof Error ? err.message : String(err)}`);
+        const extra = source.type === 'web_url' ? ` (${(source as { url: string }).url})` : '';
+        console.warn(`[RagEngine] Error procesando fuente ${source.type}${extra}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

@@ -78,13 +78,17 @@ export const agentHooks = {
     const id = crypto.randomUUID();
     pendingApprovals.set(id, { status: 'pending' });
     console.log(`[HOOK PAUSE] Esperando aprobacion del desarrollador (id=${id})...`);
-    for (let i = 0; i < 30; i++) {
-      const record = pendingApprovals.get(id);
-      if (record && record.status !== 'pending') {
-        return record.status === 'approved' ? 'APPROVED' : 'REJECTED';
+    try {
+      for (let i = 0; i < 30; i++) {
+        const record = pendingApprovals.get(id);
+        if (record && record.status !== 'pending') {
+          return record.status === 'approved' ? 'APPROVED' : 'REJECTED';
+        }
+        await new Promise(r => setTimeout(r, 1000));
       }
-      await new Promise(r => setTimeout(r, 1000));
+      return 'TIMEOUT';
+    } finally {
+      pendingApprovals.delete(id);
     }
-    return 'TIMEOUT';
   }
 };

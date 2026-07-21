@@ -11,6 +11,17 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10kb' }));
 
+// ponytail: global request timeout. Per-endpoint overrides if needed later.
+app.use((req, res, next) => {
+  const timer = setTimeout(() => {
+    if (!res.headersSent) res.status(503).json({ error: 'Request timeout' });
+  }, config.server.requestTimeoutMs);
+  const done = () => clearTimeout(timer);
+  res.on('finish', done);
+  res.on('close', done);
+  next();
+});
+
 // --- Monitoring ---
 const startTime = Date.now();
 const metrics = { totalRequests: 0, requestsByPath: {} as Record<string, number>, errorsByPath: {} as Record<string, number> };
@@ -41,13 +52,14 @@ const store = new Store();
 // In-memory store for HITL approvals (replace with DB in production)
 const commitApprovals = new Map<string, { status: 'pending' | 'approved' | 'rejected'; diffContext: string; createdAt: string }>();
 
-app.get('/api/history', (req, res) => {
+app.get('/api/history', (req, res, next) => {
     try {
-        const limit = parseInt(req.query.limit as string) || config.store.historyLimit;
+        const parsed = parseInt(req.query.limit as string, 10);
+        const limit = !isNaN(parsed) ? parsed : config.store.historyLimit;
         const records = store.getHistory(limit);
         res.json({ history: records });
     } catch (error: unknown) {
-        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        next(error);
     }
 });
 
@@ -55,11 +67,17 @@ app.get('/api/health', (req, res) => {
     res.json({ status: "Huascar Backend Online" });
 });
 
-app.post('/api/agent/execute', async (req, res) => {
+app.post('/api/agent/execute', async (req, res, next) => {
     const { task, role, system_prompt, config: agentConfig } = req.body;
 
     if (!task || !role) {
         return res.status(400).json({ error: "Faltan parámetros 'task' o 'role'" });
+    }
+    if (typeof task !== 'string' || task.length > 10000) {
+        return res.status(400).json({ error: 'task debe ser un texto de maximo 10000 caracteres' });
+    }
+    if (typeof role !== 'string' || role.length > 200) {
+        return res.status(400).json({ error: 'role debe ser un texto de maximo 200 caracteres' });
     }
 
     try {
@@ -67,38 +85,74 @@ app.post('/api/agent/execute', async (req, res) => {
         const result = await engine.executeTask(task, system_prompt, agentConfig);
         res.json(result);
     } catch (error: unknown) {
-        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        next(error);
     }
 });
 
-app.post('/api/hooks/commit-approval', (req, res) => {
-    const { diffContext } = req.body;
-    const id = crypto.randomUUID();
-    commitApprovals.set(id, { status: 'pending', diffContext: diffContext || '', createdAt: new Date().toISOString() });
-    res.json({ id, status: 'pending' });
+app.post('/api/hooks/commit-approval', (req, res, next) => {
+    try {
+        const { diffContext } = req.body;
+        if (typeof diffContext !== 'undefined' && typeof diffContext !== 'string') {
+            return res.status(400).json({ error: 'diffContext debe ser un texto' });
+        }
+        const id = crypto.randomUUID();
+        commitApprovals.set(id, { status: 'pending', diffContext: diffContext || '', createdAt: new Date().toISOString() });
+        setTimeout(() => commitApprovals.delete(id), 60000);
+        res.json({ id, status: 'pending' });
+    } catch (error: unknown) {
+        next(error);
+    }
 });
 
-app.post('/api/hooks/commit-approval/:id', (req, res) => {
-    const { id } = req.params;
-    const { approved } = req.body;
-    const record = commitApprovals.get(id);
-    if (!record) return res.status(404).json({ error: 'Approval request not found' });
-    record.status = approved ? 'approved' : 'rejected';
-    resolveApproval(id, approved);
-    res.json({ id, status: record.status });
+app.post('/api/hooks/commit-approval/:id', (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { approved } = req.body;
+        if (typeof approved !== 'boolean') {
+            return res.status(400).json({ error: 'approved debe ser booleano' });
+        }
+        const record = commitApprovals.get(id);
+        if (!record) return res.status(404).json({ error: 'Approval request not found' });
+        record.status = approved ? 'approved' : 'rejected';
+        resolveApproval(id, approved);
+        res.json({ id, status: record.status });
+    } catch (error: unknown) {
+        next(error);
+    }
 });
 
-app.get('/api/hooks/commit-approval/:id', (req, res) => {
-    const { id } = req.params;
-    const record = commitApprovals.get(id);
-    if (!record) return res.status(404).json({ error: 'Approval request not found' });
-    res.json({ id, ...record });
+app.get('/api/hooks/commit-approval/:id', (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const record = commitApprovals.get(id);
+        if (!record) return res.status(404).json({ error: 'Approval request not found' });
+        res.json({ id, ...record });
+    } catch (error: unknown) {
+        next(error);
+    }
+});
+
+// Centralized error handler
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[ERROR] ${req.method} ${req.path}: ${message}`);
+    if (!res.headersSent) res.status(500).json({ error: message });
 });
 
 const server = app.listen(config.server.port, config.server.host, () => {
     console.log(`Huascar Backend corriendo en http://${config.server.host}:${config.server.port}`);
 });
 
+process.on('uncaughtException', (err) => {
+    console.error(`[FATAL] Excepcion no capturada: ${err.message}`, err.stack?.split('\n').slice(0, 3).join('\n'));
+    store.close();
+    server.close(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+    console.error(`[FATAL] Promesa rechazada no capturada: ${reason}`);
+    store.close();
+    server.close(() => process.exit(1));
+});
 process.on('SIGTERM', () => {
     console.log('SIGTERM recibido, cerrando conexiones...');
     store.close();

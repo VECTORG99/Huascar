@@ -8,6 +8,19 @@ function envInt(key: string, fallback: number): number {
   return isNaN(n) || n < 0 ? fallback : n;
 }
 
+const VALID_ENCODINGS = ['ascii', 'utf8', 'utf-8', 'utf16le', 'ucs2', 'ucs-2', 'base64', 'base64url', 'latin1', 'binary', 'hex'];
+function envEncoding(key: string, fallback: BufferEncoding): BufferEncoding {
+  const v = process.env[key];
+  if (!v) return fallback;
+  return (VALID_ENCODINGS.includes(v) ? v : fallback) as BufferEncoding;
+}
+
+const VALID_STDERR: ReadonlyArray<'inherit' | 'pipe' | 'ignore'> = ['inherit', 'pipe', 'ignore'];
+function envStderr(key: string, fallback: 'inherit' | 'pipe' | 'ignore'): 'inherit' | 'pipe' | 'ignore' {
+  const v = process.env[key];
+  return v && VALID_STDERR.includes(v as 'inherit' | 'pipe' | 'ignore') ? (v as 'inherit' | 'pipe' | 'ignore') : fallback;
+}
+
 export const config = {
   paths: {
     steering: process.env.STEERING_CONFIG_PATH || path.resolve('./src/kiro/steering.json'),
@@ -18,6 +31,7 @@ export const config = {
   server: {
     port: envInt('PORT', 3001),
     host: process.env.HOST || '0.0.0.0',
+    requestTimeoutMs: envInt('REQUEST_TIMEOUT_MS', 120000),
   },
   react: {
     maxIterations: envInt('REACT_MAX_ITERATIONS', 3),
@@ -26,7 +40,7 @@ export const config = {
   },
   rag: {
     maxContentChars: envInt('RAG_MAX_CONTENT_CHARS', 16000),
-    encoding: (process.env.FILE_ENCODING || 'utf8') as BufferEncoding,
+    encoding: envEncoding('FILE_ENCODING', 'utf8'),
   },
   store: {
     historyLimit: envInt('HISTORY_LIMIT_DEFAULT', 20),
@@ -36,7 +50,7 @@ export const config = {
     mockMode: process.env.LLM_MOCK_MODE === 'true',
   },
   mcp: {
-    stderr: (process.env.MCP_STDERR || 'ignore') as 'inherit' | 'pipe' | 'ignore',
+    stderr: envStderr('MCP_STDERR', 'ignore'),
   },
   hasApiKey: !!process.env.OPENAI_API_KEY,
 };

@@ -58,11 +58,11 @@ export default function ReviewStep() {
           role: answers.role === "CUSTOM" ? answers.roleCustom : answers.role,
           system_prompt: answers.role === "CUSTOM" ? answers.roleCustom : undefined,
           config: {
-            tools: Object.keys(answers.tools || {}).filter(k => answers.tools[k]?.enabled),
+            tools: Object.keys(answers.tools || {}).filter(k => answers.tools[k]),
             knowledge: [
-              ...(answers.knowledge?.localRepo?.enabled ? [{ type: "local_directory", path: ".", pattern: "*.md" }] : []),
+              ...(answers.knowledge?.localRepo ? [{ type: "local_directory", path: ".", pattern: "*.md" }] : []),
               ...(answers.knowledge?.webDocs?.enabled && answers.knowledge?.webDocs?.url ? [{ type: "web_url", url: answers.knowledge.webDocs.url }] : []),
-              ...(answers.knowledge?.conventions?.enabled && answers.knowledge?.conventions?.value ? [{ type: "inline", content: answers.knowledge.conventions.value }] : []),
+              ...(answers.knowledge?.conventions?.enabled && answers.knowledge?.conventions?.text ? [{ type: "inline", content: answers.knowledge.conventions.text }] : []),
             ],
           },
         }),
