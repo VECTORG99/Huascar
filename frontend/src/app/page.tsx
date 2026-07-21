@@ -5,7 +5,6 @@ import { useRef, useState, useEffect } from "react";
 interface ExecutionResponse {
   status: string;
   agent_role: string;
-  action_taken: string;
   response: string;
   error?: string;
 }
@@ -30,8 +29,10 @@ export default function Home() {
 
     setLoading(true);
     setJsonResponse(null);
-    setLogs(prev => [...prev, `[HuascarEngine] Desplegando agente con rol: ${role}...`]);
-    setLogs(prev => [...prev, `[HOOK] Validando tarea: "${task}"...`]);
+    setLogs(prev => [...prev,
+      `[HuascarEngine] Desplegando agente con rol: ${role}...`,
+      `[HOOK] Validando tarea: "${task}"...`
+    ]);
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/agent/execute`, {
@@ -41,11 +42,14 @@ export default function Home() {
       });
 
       const data: ExecutionResponse = await res.json();
-      setLogs(prev => [...prev, `[HuascarEngine] ${data.status === "success" ? "Ejecución completada." : "Ejecución bloqueada por hook."}`]);
+      const msg = data.status === "success"
+        ? "[HuascarEngine] Ejecución completada."
+        : "[HuascarEngine] Ejecución bloqueada por hook.";
+      setLogs(prev => [...prev, msg]);
       setJsonResponse(data);
     } catch (err: any) {
       setLogs(prev => [...prev, `[ERROR] No se pudo conectar con el backend: ${err.message}`]);
-      setJsonResponse({ status: "error", agent_role: role, action_taken: "", response: err.message });
+      setJsonResponse({ status: "error", agent_role: role, response: err.message });
     } finally {
       setLoading(false);
     }
@@ -59,7 +63,6 @@ export default function Home() {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left Column: Builder Panel */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 flex flex-col gap-6">
           <h2 className="text-xl font-semibold text-zinc-100">Configuración del Agente</h2>
 
@@ -96,7 +99,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Right Column: Ejecución y Logs */}
         <div className="flex flex-col gap-6">
           <div className="bg-black border border-zinc-800 rounded-lg p-4 flex-1 font-mono text-sm overflow-hidden flex flex-col min-h-[300px]">
             <div className="flex items-center gap-2 mb-4 pb-2 border-b border-zinc-800">
