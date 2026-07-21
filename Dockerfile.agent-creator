@@ -12,6 +12,6 @@ COPY --from=deps /app/agent-creator/node_modules ./agent-creator/node_modules
 COPY agent-creator ./agent-creator
 EXPOSE 5173
 WORKDIR /app/agent-creator
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:5173 || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "const h=require('http');h.get('http://localhost:5173',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["npx", "vite", "--host", "--port", "5173"]

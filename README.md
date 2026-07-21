@@ -128,50 +128,74 @@ npm run dev
 
 ---
 
-## Deploy
+## Deploy (Stack Gratuito)
 
-### Google Cloud Run
+**Problema:** Huascar usa SQLite, que necesita almacenamiento persistente. En tiers gratis
+la mayoria de plataformas no ofrecen discos persistentes.
 
-Cada servicio se deploya de forma independiente:
+### Opcion A: Fly.io (recomendada)
 
-```bash
-# Backend
-gcloud builds submit --tag gcr.io/PROJECT_ID/huascar-backend
-gcloud run deploy huascar-backend \
-  --image gcr.io/PROJECT_ID/huascar-backend \
-  --port 3001 \
-  --allow-unauthenticated \
-  --set-env-vars="OPENAI_API_KEY=sk-..."
-
-# Agent Creator
-gcloud builds submit --tag gcr.io/PROJECT_ID/huascar-agent-creator
-gcloud run deploy huascar-agent-creator \
-  --image gcr.io/PROJECT_ID/huascar-agent-creator \
-  --port 5173 \
-  --allow-unauthenticated \
-  --set-env-vars="VITE_API_URL=https://huascar-backend-xxxxx-uc.a.run.app"
-```
-
-### Fly.io
+Fly.io da **3 VMs gratis** con **3GB de volumen persistente** cada una.
+Los archivos `fly.backend.toml` y `fly.frontend.toml` ya estan listos en el repo.
 
 ```bash
-# Backend
-fly launch --image node:20-alpine
-fly secrets set OPENAI_API_KEY=sk-...
-fly deploy
+# 1. Backend
+fly launch --name huascar-backend \
+  --config fly.backend.toml \
+  --region iad \
+  --no-deploy
 
-# Agent Creator
-fly launch --image node:20-alpine
-fly secrets set VITE_API_URL=https://huascar-backend.fly.dev
-fly deploy
+fly volumes create huascar_data --app huascar-backend --size 1 --region iad
+fly secrets set --app huascar-backend OPENAI_API_KEY=sk-...
+fly deploy --app huascar-backend --config fly.backend.toml
+
+# 2. Agent Creator
+fly launch --name huascar-agent-creator \
+  --config fly.frontend.toml \
+  --region iad \
+  --no-deploy
+
+fly deploy --app huascar-agent-creator --config fly.frontend.toml
 ```
 
-### Railway
+### Opcion B: Render + Vercel
 
-1. Conecta el repo de GitHub
-2. Agrega `OPENAI_API_KEY` en las variables de entorno
-3. Railway detecta `Dockerfile.backend` y `Dockerfile.agent-creator` automaticamente
-4. En el service agent-creator, agrega `VITE_API_URL` apuntando a la URL del backend
+- **Backend** en Render (Web Service, tier gratis, pero **duerme tras inactividad**)
+- **Frontend** en Vercel (static build, siempre activo)
+
+```bash
+# Backend en Render
+# 1. Crea Web Service desde el repo
+#    Runtime: Docker
+#    Dockerfile: Dockerfile.backend
+# 2. Agrega variables: OPENAI_API_KEY
+# 3. Render puede tardar ~2min en responder (free tier se apaga solo)
+
+# Frontend en Vercel
+cd agent-creator
+# Reemplaza VITE_API_URL por la URL de Render
+VITE_API_URL=https://huascar-backend.onrender.com npm run build
+# Sube el dist/ a Vercel
+npx vercel --prod
+```
+
+**Nota:** Render free tier **no tiene disco persistente**. Los datos se pierden al
+reiniciar. Usa esta opcion solo para pruebas/demos, no para produccion.
+
+### Opcion C: VPS Gratuito + Docker Compose
+
+Oracle Cloud Always Free, Google Cloud Free Tier (e2-micro), o Azure Free Tier:
+
+```bash
+# En la VM
+git clone https://github.com/VECTORG99/Huascar.git
+cd Huascar
+echo "OPENAI_API_KEY=sk-..." > .env
+docker compose up -d --build
+```
+
+El VPS free tipicamente da 1-2GB RAM + disco persistente. Docker Compose
+funciona completo: backend + frontend + DB volume.
 
 ---
 
