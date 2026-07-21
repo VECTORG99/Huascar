@@ -8,5 +8,9 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "moduleResolution": "NodeNext"
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "frontend"
+  ]
 }
