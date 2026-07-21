@@ -1,3 +1,6 @@
 node_modules
 frontend/node_modules
 agent-creator/node_modules
+.slim/deepwork/
+data/
+*.db

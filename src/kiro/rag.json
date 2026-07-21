@@ -1,14 +1,5 @@
 {
-  "knowledge_bases": {
-    "team_conventions": {
-      "type": "local_directory",
-      "path": "./docs/conventions",
-      "refresh_interval": "manual"
-    },
-    "api_documentation": {
-      "type": "web_scraper",
-      "url": "https://docs.nestjs.com",
-      "depth": 2
-    }
-  }
+  "knowledge_bases": [
+    { "type": "local_file", "path": "./docs/CONVENTIONS.md" }
+  ]
 }

@@ -4,9 +4,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts"
+    "start": "tsx src/server.ts",
+    "test": "node test/api_test.mjs"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/json-schema": "^7.0.15",
@@ -19,6 +21,7 @@
     "@ai-sdk/openai": "^4.0.16",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ai": "^7.0.32",
+    "better-sqlite3": "^13.0.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1"

@@ -5,6 +5,12 @@ import { generateText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { Client } from '@modelcontextprotocol/sdk/client';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
+import { RagEngine, RagSource } from './RagEngine.js';
+import { Store } from './Store.js';
+
+interface RagConfig {
+  knowledge_bases: RagSource[];
+}
 
 interface McpServerConfig {
   command: string;
@@ -31,8 +37,10 @@ export class HuascarEngine {
   private steering: any;
   public activeRole: any;
   private mcpClients: ConnectedMcpClient[] = [];
+  private rag: RagEngine;
+  private store: Store | null;
 
-  constructor(roleKey: string) {
+  constructor(roleKey: string, store?: Store) {
     const steeringPath = path.resolve('./src/kiro/steering.json');
     this.steering = JSON.parse(fs.readFileSync(steeringPath, 'utf8'));
 
@@ -40,6 +48,8 @@ export class HuascarEngine {
         throw new Error(`El rol '${roleKey}' no existe en steering.json`);
     }
     this.activeRole = this.steering.roles[roleKey];
+    this.rag = new RagEngine();
+    this.store = store || null;
   }
 
   private resolveEnv(env?: Record<string, string>): Record<string, string> | undefined {
@@ -94,6 +104,25 @@ export class HuascarEngine {
     }
   }
 
+  private loadRagSources(): void {
+    const ragPath = path.resolve('./src/kiro/rag.json');
+    if (!fs.existsSync(ragPath)) {
+      console.log('[HuascarEngine] rag.json no encontrado, saltando RAG.');
+      return;
+    }
+    try {
+      const config: RagConfig = JSON.parse(fs.readFileSync(ragPath, 'utf8'));
+      if (!Array.isArray(config.knowledge_bases)) {
+        console.warn('[HuascarEngine] knowledge_bases no es un array, saltando RAG.');
+        return;
+      }
+      this.rag.loadSources(config.knowledge_bases);
+      console.log(`[HuascarEngine] RAG cargado: ${config.knowledge_bases.length} fuentes`);
+    } catch (err: any) {
+      console.warn(`[HuascarEngine] Error cargando RAG: ${err.message}`);
+    }
+  }
+
   private async disconnectMcpServers(): Promise<void> {
     for (const c of this.mcpClients) {
       try {
@@ -117,6 +146,8 @@ export class HuascarEngine {
 
       if (hasApiKey) {
         await this.connectMcpServers();
+
+        this.loadRagSources();
 
         if (this.mcpClients.length > 0) {
           mcpContext = '\n\n## Herramientas MCP disponibles:\n';
@@ -142,20 +173,30 @@ export class HuascarEngine {
         }
       }
 
-      const systemPrompt = this.activeRole.system_prompt + mcpContext;
+      const ragContext = this.rag.getContext();
+      const systemPrompt = this.activeRole.system_prompt + (ragContext ? '\n\n' + ragContext : '') + mcpContext;
 
       const responseText = hasApiKey
         ? await this.runReActLoop(systemPrompt, task)
         : this.runMockReActLoop(task);
 
+      if (this.store) {
+        try {
+          this.store.saveExecution(this.activeRole.name, task, responseText);
+        } catch (err) {
+          console.warn('[HuascarEngine] Error guardando ejecucion:', err);
+        }
+      }
+
       return { status: "success", agent_role: this.activeRole.name, response: responseText };
 
-    } catch (error: any) {
-      return { status: "blocked", error: error.message };
+    } catch (error: unknown) {
+      return { status: "blocked", error: error instanceof Error ? error.message : String(error) };
     } finally {
       await this.disconnectMcpServers();
     }
   }
+
 
   private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
     const maxIterations = 3;
@@ -228,17 +269,16 @@ export class HuascarEngine {
               toolResult = toolResult.slice(0, TOOL_RESULT_MAX) + '\n... [truncado]';
             }
             console.log(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
-          } catch (err: any) {
-            toolResult = `Error ejecutando "${toolName}": ${err.message}`;
-            console.error(`[HuascarEngine] Error en herramienta: ${err.message}`);
+          } catch (err: unknown) {
+            toolResult = `Error ejecutando "${toolName}": ${err instanceof Error ? err.message : String(err)}`;
+            console.error(`[HuascarEngine] Error en herramienta: ${err instanceof Error ? err.message : String(err)}`);
           }
           break;
         }
       }
 
-      context += `\n\n## Resultado de ${toolName}:\n${toolResult}\n\nContinua o responde FINAL: <respuesta>.`;
       messages.push({ role: 'assistant', content: text });
-      messages.push({ role: 'user', content: `Resultado de ${toolName}: ${toolResult}` });
+      messages.push({ role: 'user', content: `## Resultado de ${toolName}:\n${toolResult}\n\nContinua o responde FINAL: <respuesta>.` });
     }
 
     console.log(`[HuascarEngine] Maximo de iteraciones (${maxIterations}) alcanzado`);
