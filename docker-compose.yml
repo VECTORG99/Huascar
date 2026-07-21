@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "3001:3001"
+    env_file:
+      - path: .env
+        required: false
+    networks:
+      - huascar-network
+
+  agent-creator:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent-creator
+    ports:
+      - "5173:5173"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:3001
+    depends_on:
+      - backend
+    networks:
+      - huascar-network
+
+networks:
+  huascar-network:
+    driver: bridge

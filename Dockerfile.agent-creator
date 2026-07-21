@@ -1,0 +1,15 @@
+# Stage 1: Install dependencies
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY agent-creator/package.json agent-creator/package-lock.json ./agent-creator/
+WORKDIR /app/agent-creator
+RUN npm ci
+
+# Stage 2: Run
+FROM node:20-alpine AS runner
+WORKDIR /app
+COPY --from=deps /app/agent-creator/node_modules ./agent-creator/node_modules
+COPY agent-creator ./agent-creator
+EXPOSE 5173
+WORKDIR /app/agent-creator
+CMD ["npx", "vite", "--host"]
