@@ -199,6 +199,28 @@ funciona completo: backend + frontend + DB volume.
 
 ---
 
+## CI/CD
+
+El workflow `ci.yml` corre en cada push y PR:
+
+| Paso | Comando |
+|------|---------|
+| TypeScript check | `npx tsc --noEmit` |
+| Unit tests | `npm run test:unit` |
+| Integration tests | `node test/api_test.mjs` |
+| Deploy a Fly.io | Solo en push a `master` |
+
+Para activar deploy automatico necesitas configurar un **secret** en GitHub:
+
+1. Ve a Settings → Secrets and variables → Actions
+2. Agrega `FLY_API_TOKEN` con un token de Fly.io:
+   ```bash
+   fly tokens create deploy --org personal
+   ```
+3. El workflow deploya ambos servicios automaticamente al hacer push a `master`
+
+---
+
 ## API Reference
 
 ### `GET /api/health`

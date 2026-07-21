@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: cp .env.example .env
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Integration tests
+        run: |
+          node test/api_test.mjs
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy backend to Fly.io
+        uses: superfly/flyctl-actions@1.5
+        with:
+          args: "deploy --config fly.backend.toml --app huascar-backend"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Deploy frontend to Fly.io
+        uses: superfly/flyctl-actions@1.5
+        with:
+          args: "deploy --config fly.frontend.toml --app huascar-agent-creator"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
