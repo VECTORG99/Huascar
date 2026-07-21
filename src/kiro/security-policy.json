@@ -12,7 +12,9 @@
       "drop  table",
       "format",
       "mkfs",
-      "dd if="
+      "dd if=",
+      "--dangerously-force-approval",
+      "BYPASS_SECRET"
     ]
   }
 }

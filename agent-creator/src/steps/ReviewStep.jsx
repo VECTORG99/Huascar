@@ -46,12 +46,25 @@ export default function ReviewStep() {
     const config = buildAgentConfig();
 
     try {
-      const res = await fetch("http://localhost:3001/api/agent/execute", {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) {
+        throw new Error('VITE_API_URL no configurada. Define esta variable de entorno con la URL del backend.');
+      }
+      const res = await fetch(`${apiUrl}/api/agent/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           task: answers.task,
           role: answers.role === "CUSTOM" ? answers.roleCustom : answers.role,
+          system_prompt: answers.role === "CUSTOM" ? answers.roleCustom : undefined,
+          config: {
+            tools: Object.keys(answers.tools || {}).filter(k => answers.tools[k]?.enabled),
+            knowledge: [
+              ...(answers.knowledge?.localRepo?.enabled ? [{ type: "local_directory", path: ".", pattern: "*.md" }] : []),
+              ...(answers.knowledge?.webDocs?.enabled && answers.knowledge?.webDocs?.url ? [{ type: "web_url", url: answers.knowledge.webDocs.url }] : []),
+              ...(answers.knowledge?.conventions?.enabled && answers.knowledge?.conventions?.value ? [{ type: "inline", content: answers.knowledge.conventions.value }] : []),
+            ],
+          },
         }),
       });
 

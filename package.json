@@ -5,7 +5,8 @@
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "test": "node test/api_test.mjs"
+    "test": "node test/api_test.mjs",
+    "test:unit": "node --import tsx/esm --test test/*.test.mjs"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

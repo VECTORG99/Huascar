@@ -30,20 +30,26 @@ interface ConnectedMcpClient {
   tools: { name: string; description?: string; inputSchema?: any }[];
 }
 
+export interface AgentConfig {
+  tools?: string[];
+  knowledge?: RagSource[];
+  security?: {
+    block_destructive_commands?: boolean;
+    require_commit_approval?: boolean;
+  };
+}
+
 export class HuascarEngine {
   private steering: any;
   public activeRole: any;
   private mcpClients: ConnectedMcpClient[] = [];
   private rag: RagEngine;
   private store: Store | null;
+  private roleKey: string;
 
   constructor(roleKey: string, store?: Store) {
     this.steering = JSON.parse(fs.readFileSync(config.paths.steering, config.rag.encoding));
-
-    if (!this.steering.roles[roleKey]) {
-        throw new Error(`El rol '${roleKey}' no existe en steering.json`);
-    }
-    this.activeRole = this.steering.roles[roleKey];
+    this.roleKey = roleKey;
     this.rag = new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding });
     this.store = store || null;
   }
@@ -93,13 +99,13 @@ export class HuascarEngine {
         console.log(`[HuascarEngine] MCP "${name}" conectado (${tools.length} herramientas)`);
 
         this.mcpClients.push({ name, client, transport, tools });
-      } catch (err: any) {
-        console.error(`[HuascarEngine] Error conectando MCP "${name}": ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`[HuascarEngine] Error conectando MCP "${name}": ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
 
-  private loadRagSources(): void {
+  private async loadRagSources(): Promise<void> {
     if (!fs.existsSync(config.paths.rag)) {
       console.log('[HuascarEngine] rag.json no encontrado, saltando RAG.');
       return;
@@ -110,10 +116,10 @@ export class HuascarEngine {
         console.warn('[HuascarEngine] knowledge_bases no es un array, saltando RAG.');
         return;
       }
-      this.rag.loadSources(ragConfig.knowledge_bases);
+      await this.rag.loadSources(ragConfig.knowledge_bases);
       console.log(`[HuascarEngine] RAG cargado: ${ragConfig.knowledge_bases.length} fuentes`);
-    } catch (err: any) {
-      console.warn(`[HuascarEngine] Error cargando RAG: ${err.message}`);
+    } catch (err: unknown) {
+      console.warn(`[HuascarEngine] Error cargando RAG: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -121,14 +127,23 @@ export class HuascarEngine {
     for (const c of this.mcpClients) {
       try {
         await c.client.close();
-      } catch (err: any) {
-        console.error(`[HuascarEngine] Error cerrando MCP "${c.name}": ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`[HuascarEngine] Error cerrando MCP "${c.name}": ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     this.mcpClients = [];
   }
 
-  async executeTask(task: string) {
+  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig) {
+    if (!this.steering.roles[this.roleKey]) {
+      if (systemPrompt) {
+        this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
+      } else {
+        throw new Error(`El rol '${this.roleKey}' no existe en steering.json`);
+      }
+    } else {
+      this.activeRole = this.steering.roles[this.roleKey];
+    }
     console.log(`\n[HuascarEngine] Iniciando LLM ReAct Loop...`);
     console.log(`[HuascarEngine] Rol activo: ${this.activeRole.name}`);
     console.log(`[HuascarEngine] Tarea: ${task}`);
@@ -141,7 +156,21 @@ export class HuascarEngine {
       if (!useMock) {
         await this.connectMcpServers();
 
-        this.loadRagSources();
+        await this.loadRagSources();
+
+        // Apply optional agent config (from questionnaire) on top of base settings
+        if (agentConfig) {
+          // Filter MCP tools to only those selected by user
+          if (agentConfig.tools && agentConfig.tools.length > 0) {
+            for (const c of this.mcpClients) {
+              c.tools = c.tools.filter(t => agentConfig.tools!.includes(t.name));
+            }
+          }
+          // Add knowledge sources from config
+          if (agentConfig.knowledge && agentConfig.knowledge.length > 0) {
+            await this.rag.loadSources(agentConfig.knowledge);
+          }
+        }
 
         if (this.mcpClients.length > 0) {
           mcpContext = '\n\n## Herramientas MCP disponibles:\n';

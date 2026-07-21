@@ -128,6 +128,53 @@ npm run dev
 
 ---
 
+## Deploy
+
+### Google Cloud Run
+
+Cada servicio se deploya de forma independiente:
+
+```bash
+# Backend
+gcloud builds submit --tag gcr.io/PROJECT_ID/huascar-backend
+gcloud run deploy huascar-backend \
+  --image gcr.io/PROJECT_ID/huascar-backend \
+  --port 3001 \
+  --allow-unauthenticated \
+  --set-env-vars="OPENAI_API_KEY=sk-..."
+
+# Agent Creator
+gcloud builds submit --tag gcr.io/PROJECT_ID/huascar-agent-creator
+gcloud run deploy huascar-agent-creator \
+  --image gcr.io/PROJECT_ID/huascar-agent-creator \
+  --port 5173 \
+  --allow-unauthenticated \
+  --set-env-vars="VITE_API_URL=https://huascar-backend-xxxxx-uc.a.run.app"
+```
+
+### Fly.io
+
+```bash
+# Backend
+fly launch --image node:20-alpine
+fly secrets set OPENAI_API_KEY=sk-...
+fly deploy
+
+# Agent Creator
+fly launch --image node:20-alpine
+fly secrets set VITE_API_URL=https://huascar-backend.fly.dev
+fly deploy
+```
+
+### Railway
+
+1. Conecta el repo de GitHub
+2. Agrega `OPENAI_API_KEY` en las variables de entorno
+3. Railway detecta `Dockerfile.backend` y `Dockerfile.agent-creator` automaticamente
+4. En el service agent-creator, agrega `VITE_API_URL` apuntando a la URL del backend
+
+---
+
 ## API Reference
 
 ### `GET /api/health`

@@ -8,6 +8,14 @@ services:
     env_file:
       - path: .env
         required: false
+    volumes:
+      - huascar-data:/app/data
+    healthcheck:
+      test: wget -qO- http://localhost:3001/api/health || exit 1
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     networks:
       - huascar-network
 
@@ -18,11 +26,15 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:3001
+      - VITE_API_URL=http://backend:3001
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - huascar-network
+
+volumes:
+  huascar-data:
 
 networks:
   huascar-network:
