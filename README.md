@@ -1,4 +1,4 @@
-# Plataforma de Agentes IA (Hackathon Pitch)
+# Huascar - Plataforma de Agentes IA
 
 **El problema:** Construir agentes de IA robustos requiere orquestar RAG, MCP, ReAct y evaluaciones complejas.
 **La solución:** Una plataforma que abstrae la complejidad en configuraciones declarativas simples.
