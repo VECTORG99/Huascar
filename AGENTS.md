@@ -17,17 +17,17 @@ Todo desarrollo en este repositorio es conducido por agentes AI. El humano super
 
 | Rama | Propósito |
 |---|---|
-| `main` | Producción. Solo recibe merges de `development` en releases. Dispara deploys y automatizaciones de producción. |
+| `master` | Producción. Solo recibe merges de `development` en releases. Dispara deploys y automatizaciones de producción. |
 | `development` | Integración. Todo PR apunta aquí. Rama base para nuevas features y fixes. |
 | `feature/*`, `fix/*`, `hotfix/*` | Ramas de trabajo. Se crean desde `development`. |
 
-- **NUNCA** hacer push directo a `main` salvo hotfix urgente autorizado explícitamente por el usuario.
+- **NUNCA** hacer push directo a `master` salvo hotfix urgente autorizado explícitamente por el usuario.
 - **NUNCA** hacer push directo a `development`. Todo pasa por PR.
 
 ## 4. Pull Requests (Obligatorio)
 
 - Todo cambio (feature, fix, refactor, docs) **DEBE** pasar por PR.
-- PR target: `development` (salvo hotfix urgente → `main`).
+- PR target: `development` (salvo hotfix urgente → `master`).
 - Merge de PRs se ejecuta exclusivamente con `gh pr merge`.
 - Antes de crear un PR, el agente **DEBE**:
   1. Revisar PRs e issues abiertos para detectar solapamiento o conflictos potenciales.
@@ -36,16 +36,16 @@ Todo desarrollo en este repositorio es conducido por agentes AI. El humano super
 
 ## 5. CI / Testing
 
-- CI y tests corren en **todas** las ramas (`main`, `development`) y en **todos** los PRs sin excepción.
+- CI y tests corren en **todas** las ramas (`master`, `development`) y en **todos** los PRs sin excepción.
 - Los tests no tienen restricciones de rama ni requieren ejecución manual.
 - Todo nuevo código debe incluir tests. No hay excepciones.
 - Si un test falla en CI, el agente debe corregirlo antes de solicitar merge.
 
 ## 6. Releases
 
-- Release = merge de `development` → `main`.
+- Release = merge de `development` → `master`.
 - Solo se hace release cuando el usuario lo solicita o cuando se cumple un milestone definido.
-- Todo deploy y automatización de producción se dispara desde `main`.
+- Todo deploy y automatización de producción se dispara desde `master`.
 
 ## 7. Resolución de Conflictos y Autonomía
 
@@ -63,3 +63,18 @@ Todo desarrollo en este repositorio es conducido por agentes AI. El humano super
 - Formato: datos estructurados, listas, tablas, referencias a archivos/líneas concretas.
 - No generar READMEs decorativos ni guías de "getting started" salvo que el usuario lo pida explícitamente para humanos.
 - Comentarios en código: solo cuando el contexto no es obvio para un LLM leyendo el AST.
+
+## 9. GitHub CLI — Ejecución Sin Confirmación
+
+El agente tiene autorización total para ejecutar comandos de `gh` CLI sin pedir confirmación, incluyendo:
+- `gh issue create`, `gh issue list`, `gh issue close`, `gh issue edit`
+- `gh pr create`, `gh pr list`, `gh pr merge` (sin --admin), `gh pr edit`
+- `gh pr view`, `gh pr diff`, `gh pr checks`
+- `gh run list`, `gh run view`, `gh run rerun`
+- `gh label create`, `gh label list`
+
+**Excepciones que SÍ requieren confirmación:**
+- `gh repo delete`
+- `gh pr merge --admin`
+- `gh release delete`
+- Cualquier operación destructiva irreversible
