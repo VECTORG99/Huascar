@@ -366,3 +366,69 @@ huascar/
 6. **Sin dependencias circulares**: Los modulos importan config, no al reves.
 7. **MCP lifecycle en finally**: Los servidores MCP siempre se desconectan, incluso en error.
 
+
+---
+
+## Creator Backend v1
+
+El Creator es un subsistema separado del runtime ReAct. Su responsabilidad es transformar respuestas declarativas en un bundle revisable; no ejecuta el agente generado.
+
+### Pipeline
+
+```text
+HTTP answers
+  → parseCreatorAnswers
+  → evaluateDecisionTree
+  → recomendaciones deterministas
+  → buildBlueprint
+  → generadores de artefactos
+  → validación de rutas/secretos/tamaño
+  → contenido canónico + SHA-256
+  → bundle JSON
+```
+
+### Módulos
+
+| Módulo | Responsabilidad |
+|---|---|
+| `src/creator/domain.ts` | Contratos de catálogo, preguntas, evaluación, blueprint, artefactos y errores. |
+| `src/creator/catalog.ts` | Taxonomía y catálogo tecnológico versionado, búsqueda y validación de categorías. |
+| `src/creator/decisionTree.ts` | Condiciones, preguntas visibles, progreso, validación y recomendaciones. |
+| `src/creator/generator.ts` | Compilación del blueprint, documentación, adaptadores Huascar/Kiro/portable y manifest. |
+| `src/creator/router.ts` | API REST versionada y Problem Details. |
+
+### Estado y versiones
+
+El backend no crea sesiones anónimas. Cada llamada a `evaluate` o `preview` recibe todas las respuestas acumuladas. El cliente puede enviar `workflowVersion` y `catalogVersion`; un mismatch responde `409` para evitar generar con reglas distintas de las que vio el usuario.
+
+Esta estrategia permite volver atrás, recalcular ramas y escalar horizontalmente. La persistencia se añadirá junto con login, ownership y autorización.
+
+### Invariantes del generador
+
+1. Mismo input y mismas versiones producen exactamente el mismo contenido y hashes.
+2. Preview no usa red, filesystem, LLM, MCP, SQLite ni shell.
+3. No se aceptan rutas absolutas, traversal, backslashes o duplicados.
+4. No se permiten secretos literales con patrones conocidos.
+5. El manifest lista todos los artefactos previos y sus SHA-256.
+6. Kiro sólo se genera si `agent_targets` incluye `kiro`.
+7. RAG y PR review sólo se generan cuando sus ramas fueron habilitadas.
+8. Producción agrega aprobación, checklist operacional y warnings aunque el usuario no los seleccione explícitamente.
+
+### Relación con el runtime
+
+El formato `huascar/steering.json` mantiene la estructura de roles que consume `HuascarEngine`. Los demás archivos generados son previews que deben revisarse antes de sustituir la configuración runtime. No existe todavía un endpoint que instale o ejecute un blueprint; hacerlo requiere resolver autenticación, sandbox, namespaces RAG y HITL.
+
+### Contrato HTTP
+
+```text
+GET  /api/v1/creator/catalog
+GET  /api/v1/creator/workflow
+GET  /api/v1/creator/tutorial
+POST /api/v1/creator/evaluate
+POST /api/v1/creator/preview
+POST /api/v1/creator/generate
+```
+
+Los endpoints del Creator son puros y conviven con las rutas legacy. El parser JSON global admite 128 KB, mientras que el árbol limita textos y cantidad de selecciones por campo.
+
+`huascar/security-policy.json` sólo contiene los campos que consume actualmente `hooks.ts`. Las capacidades, autonomía y aprobación quedan en `huascar/governance.json` como contrato declarativo; el runtime legacy todavía necesita un adaptador para aplicarlo y por eso el preview no afirma que esas reglas ya estén activas.

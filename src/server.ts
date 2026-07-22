@@ -6,10 +6,12 @@ import { config } from './config.js';
 import { HuascarEngine } from './engine/HuascarEngine.js';
 import { Store } from './engine/Store.js';
 import { resolveApproval, getApprovalStatus } from './kiro/hooks.js';
+import { creatorRouter } from './creator/router.js';
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10kb' }));
+app.use(express.json({ limit: '128kb' }));
+app.use('/api/v1/creator', creatorRouter);
 
 // ponytail: global request timeout. Per-endpoint overrides if needed later.
 app.use((req, res, next) => {

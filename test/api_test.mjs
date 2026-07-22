@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { developmentAnswers } from './creatorFixture.mjs';
 
 const BASE = 'http://localhost:3002';
 let passed = 0;
@@ -13,14 +14,15 @@ async function assertJson(method, path, body, expectedStatus, expectedKey) {
   const ok = res.status === expectedStatus && data[expectedKey] !== undefined;
   const label = `${method} ${path} -> ${res.status} ${ok ? 'PASS' : 'FAIL'}`;
   console.log(label);
-  if (ok) passed++; else { failed++; console.log('  expected:', expectedStatus, 'got:', res.status, JSON.stringify(data).slice(0, 100)); }
+  if (ok) passed++; else { failed++; console.log('  expected:', expectedStatus, 'got:', res.status, JSON.stringify(data).slice(0, 200)); }
   if (!ok) throw new Error(`Test failed: ${method} ${path}`);
+  return data;
 }
 
 console.log('=== Huascar API Integration Tests ===\n');
 
 const proc = spawn('npx', ['tsx', 'src/server.ts'], {
-  env: { ...process.env, PORT: '3002', HUASCAR_DB_PATH: '/tmp/huascar_test.db' },
+  env: { ...process.env, PORT: '3002', HUASCAR_DB_PATH: '/tmp/huascar_test.db', LLM_MOCK_MODE: 'true' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 proc.stdout.on('data', d => process.stdout.write(`[server] ${d}`));
@@ -36,6 +38,19 @@ for (let i = 0; i < 30; i++) {
 
 try {
   await assertJson('GET', '/api/health', null, 200, 'status');
+
+  // Creator API v1: discovery, stateless evaluation and deterministic generation
+  await assertJson('GET', '/api/v1/creator/catalog', null, 200, 'items');
+  await assertJson('GET', '/api/v1/creator/workflow', null, 200, 'questions');
+  await assertJson('GET', '/api/v1/creator/tutorial', null, 200, 'skippable');
+  const partial = await assertJson('POST', '/api/v1/creator/evaluate', { answers: {} }, 200, 'nextQuestion');
+  if (partial.nextQuestion?.id !== 'agent_name') throw new Error('Creator did not start with agent_name');
+  await assertJson('POST', '/api/v1/creator/preview', { answers: { agent_name: 'Incomplete' } }, 422, 'issues');
+  await assertJson('POST', '/api/v1/creator/evaluate', { answers: {}, workflowVersion: '0.0.0' }, 409, 'issues');
+  const preview = await assertJson('POST', '/api/v1/creator/preview', { answers: developmentAnswers, workflowVersion: '1.0.0', catalogVersion: '1.0.0' }, 200, 'artifacts');
+  if (!preview.artifacts.some(file => file.path === 'docs/WHY.md')) throw new Error('Preview missing WHY documentation');
+
+  // Legacy behavior remains available
   await assertJson('POST', '/api/agent/execute', {}, 400, 'error');
   await assertJson('POST', '/api/agent/execute', { task: 'Revisa el codigo', role: 'PR_REVIEWER' }, 200, 'response');
   await assertJson('GET', '/api/history', null, 200, 'history');
