@@ -2,7 +2,7 @@ services:
   - type: web
     name: huascar-backend
     runtime: docker
-    repo: https://github.com/VECTORG99/hackathon-agent-builder
+    repo: https://github.com/VECTORG99/Huascar
     dockerfilePath: ./Dockerfile.backend
     envVars:
       - key: PORT
