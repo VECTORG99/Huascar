@@ -1,9 +1,59 @@
+# Dependencies (installed during build)
 node_modules
-.git
+agent-creator/node_modules
+frontend/node_modules
+
+# Build artifacts
 dist
 .next
-.slim/
+out
+
+# Environment and secrets
+.env*
+*.pem
+*.key
+*.cert
+secrets/
+credentials/
+
+# Database
 data/
 *.db
-.env*
-agent-creator/node_modules
+*.db-wal
+*.db-shm
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing and coverage
+coverage/
+.nyc_output/
+test/
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Misc
+.slim/
+tmp/
+.kiro/

@@ -14,13 +14,16 @@ RUN npm ci --omit=dev
 
 # Stage 3: Runner — production image
 FROM node:20-alpine AS runner
+ENV NODE_ENV=production
+RUN apk add --no-cache wget
 RUN addgroup -S huascar && adduser -S huascar -G huascar
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./
 RUN mkdir -p /data /app/data && chown -R huascar:huascar /data /app/data
 USER huascar
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "const h=require('http');h.get('http://localhost:3001/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+  CMD wget -qO- http://localhost:3001/api/health || exit 1
 CMD ["node", "dist/server.js"]
