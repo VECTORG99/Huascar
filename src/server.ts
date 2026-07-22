@@ -7,6 +7,7 @@ import { HuascarEngine } from './engine/HuascarEngine.js';
 import { Store } from './engine/Store.js';
 import { resolveApproval, getApprovalStatus } from './kiro/hooks.js';
 import { creatorRouter } from './creator/router.js';
+import { requireAuth } from './middleware/auth.js';
 
 const app = express();
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173').split(',').map(o => o.trim());
@@ -71,6 +72,18 @@ app.get('/api/metrics', (req, res) => {
 
 const store = new Store();
 
+// --- Public routes (no auth required) ---
+app.get('/api/health', (req, res) => {
+    res.json({ status: "Huascar Backend Online" });
+});
+
+// --- Auth middleware for all subsequent /api routes ---
+app.use('/api', (req, res, next) => {
+  // Health and metrics are already handled above
+  if (req.path === '/health' || req.path === '/metrics') return next();
+  requireAuth(req, res, next);
+});
+
 // In-memory store for HITL approvals (replace with DB in production)
 const commitApprovals = new Map<string, { status: 'pending' | 'approved' | 'rejected'; diffContext: string; createdAt: string }>();
 
@@ -83,10 +96,6 @@ app.get('/api/history', (req, res, next) => {
     } catch (error: unknown) {
         next(error);
     }
-});
-
-app.get('/api/health', (req, res) => {
-    res.json({ status: "Huascar Backend Online" });
 });
 
 app.post('/api/agent/execute', async (req, res, next) => {
