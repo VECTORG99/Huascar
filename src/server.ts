@@ -9,7 +9,20 @@ import { resolveApproval, getApprovalStatus } from './kiro/hooks.js';
 import { creatorRouter } from './creator/router.js';
 
 const app = express();
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173').split(',').map(o => o.trim());
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, health checks)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+}));
 app.use(express.json({ limit: '128kb' }));
 app.use('/api/v1/creator', creatorRouter);
 
@@ -44,6 +57,13 @@ app.use((req, res, next) => {
 });
 
 app.get('/api/metrics', (req, res) => {
+  const metricsToken = process.env.METRICS_SECRET;
+  if (process.env.NODE_ENV === 'production' && metricsToken) {
+    const provided = req.headers['x-metrics-token'];
+    if (provided !== metricsToken) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
   const uptime = Math.floor((Date.now() - startTime) / 1000);
   res.json({ uptime, totalRequests: metrics.totalRequests, requestsByPath: metrics.requestsByPath, errorsByPath: metrics.errorsByPath });
 });
