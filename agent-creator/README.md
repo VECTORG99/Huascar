@@ -1,16 +1,51 @@
-# React + Vite
+# Huascar Agent Creator
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Frontend Vite + React que renderiza el árbol de decisiones del Creator Backend v1.
 
-Currently, two official plugins are available:
+## Funcionalidad
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Carga catálogo, workflow y tutorial desde `/api/v1/creator`.
+- Presenta un tutorial ficticio y skippable.
+- Renderiza preguntas de texto, booleanas, opciones y catálogo sin codificar el flujo en el cliente.
+- Permite buscar tecnologías y agregar opciones `custom:<slug>`.
+- Conserva respuestas, cursor visible y fase de navegación en `sessionStorage`.
+- Reevalúa ramas, progreso, recomendaciones y advertencias con el backend.
+- Revisa todas las decisiones antes de generar.
+- Descarga el bundle JSON o cada artefacto individual.
 
-## React Compiler
+El frontend no ejecuta agentes, no escribe archivos y no realiza despliegues.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Desarrollo
 
-## Expanding the Oxlint configuration
+```bash
+cp .env.example .env
+npm ci
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Variables:
+
+```env
+VITE_API_URL=http://localhost:3001
+```
+
+La URL debe ser accesible desde el navegador, no sólo desde la red interna de Docker.
+
+## Validación
+
+```bash
+npm run lint
+npm run build
+```
+
+## Contrato utilizado
+
+```text
+GET  /api/v1/creator/catalog
+GET  /api/v1/creator/workflow
+GET  /api/v1/creator/tutorial
+POST /api/v1/creator/evaluate
+POST /api/v1/creator/preview
+```
+
+Las respuestas se mantienen en el cliente. El backend es stateless, devuelve la evaluación canónica y poda ramas ocultas. El cursor restaura la pregunta visible exacta; para datos antiguos sin cursor, el cliente retoma la primera decisión visible pendiente. Con respuestas requeridas completas, restaura la edición sólo si esa era la fase guardada y, en caso contrario, abre la revisión.

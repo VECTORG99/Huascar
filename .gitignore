@@ -4,3 +4,4 @@ agent-creator/node_modules
 .slim/deepwork/
 data/
 *.db
+/dist/

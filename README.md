@@ -23,12 +23,15 @@ El Creator no usa un LLM para decidir la arquitectura, no ejecuta comandos y no 
 - Tutorial ficticio y skippable disponible como contenido de API.
 - Pruebas unitarias e integración para ramas, validación, determinismo y compatibilidad legacy.
 
-### Pendiente en las interfaces
+### Implementado en la interfaz
 
-- El frontend `agent-creator/` todavía utiliza el cuestionario lineal anterior. Debe migrarse para renderizar el workflow entregado por `/api/v1/creator/workflow`.
-- El tutorial existe en backend, pero su experiencia visual tipo juego aún no está implementada.
+- `agent-creator/` carga catálogo, workflow y tutorial directamente desde `/api/v1/creator`.
+- Renderiza preguntas y ramas del backend sin codificar el orden en React.
+- Conserva respuestas, pregunta actual y fase de navegación en `sessionStorage`, permite volver y recalcula el árbol mediante `/evaluate`.
+- Incluye tutorial visual skippable, revisión de recomendaciones y advertencias.
+- Descarga el bundle JSON completo o artefactos individuales del preview.
 - **Login, cuentas y multiusuario están documentados como roadmap; no están implementados.**
-- El Creator entrega un bundle JSON de preview. La descarga ZIP, escritura automática en repositorios y despliegue se dejan para una fase posterior.
+- La descarga ZIP, escritura automática en repositorios y despliegue se dejan para una fase posterior.
 
 ---
 
@@ -94,7 +97,7 @@ El árbol pregunta por:
 - destinos Huascar, Kiro y portable;
 - hooks y skills.
 
-Todas las selecciones de stack aceptan `custom:<slug>`. Una opción custom se conserva en el blueprint y en `WHY.md`, pero se marca sin adaptador automático para no inventar integración.
+Todas las selecciones de catálogo aceptan `custom:<slug>`. Una opción custom se conserva en el blueprint y genera una advertencia de adaptador pendiente; `WHY.md` documenta las decisiones custom que forman parte de sus secciones explicativas.
 
 ### 4. Recomendaciones
 
@@ -172,7 +175,7 @@ Para EC2, Huascar recomienda documentar además el proceso de servicio, parcheo,
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│ Frontend futuro del Creator                                │
+│ Agent Creator web                                         │
 │ Renderiza workflow + conserva answers localmente           │
 └─────────────────────────────┬──────────────────────────────┘
                               │ JSON
@@ -288,9 +291,10 @@ Alias semántico de `/preview`. También genera únicamente el bundle en memoria
 El cliente puede fijar `workflowVersion` y `catalogVersion`:
 
 - `200`: evaluación o generación correcta;
-- `400`: body o respuestas con tipo inválido;
+- `400`: body estructuralmente inválido o propiedades no permitidas;
+- `200` con `issues[]`: evaluación de respuestas con tipo/opción inválida;
 - `409`: versión de workflow/catálogo obsoleta;
-- `422`: árbol incompleto, secreto literal o bundle inseguro;
+- `422`: preview con árbol incompleto, respuestas inválidas, secreto literal o bundle inseguro;
 - `500`: error interno.
 
 Los errores de Creator usan `application/problem+json` e incluyen `issues[]` con rutas de campo.
@@ -367,7 +371,7 @@ cd agent-creator && npm ci && npm run dev
 - Dashboard Next.js: `http://localhost:3000`
 - Agent Creator Vite: `http://localhost:5173`
 
-El Agent Creator actual aún debe migrarse al workflow server-driven.
+El Agent Creator consume el workflow dinámico del backend. Configura `VITE_API_URL` con la URL pública del backend antes del build o desarrollo.
 
 ### Docker
 
@@ -430,13 +434,14 @@ test/
 
 ## Roadmap
 
-### Próxima fase: experiencia web
+### Experiencia web
 
-- [ ] Renderizar preguntas dinámicas desde `/workflow`.
-- [ ] Conservar answers en `sessionStorage` y llamar `/evaluate` al cambiar.
-- [ ] Implementar tutorial visual skippable tipo juego.
-- [ ] Mostrar recomendaciones, warnings y diferencias entre targets.
-- [ ] Descargar artefactos individuales o un ZIP validado.
+- [x] Renderizar preguntas dinámicas desde `/workflow`.
+- [x] Conservar answers en `sessionStorage` y llamar `/evaluate` por paso.
+- [x] Implementar tutorial visual skippable tipo juego.
+- [x] Mostrar recomendaciones y warnings antes de generar.
+- [x] Descargar el bundle JSON y artefactos individuales.
+- [ ] Añadir exportación ZIP validada y comparación visual de revisiones.
 
 ### Identidad y persistencia
 
