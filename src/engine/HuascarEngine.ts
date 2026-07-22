@@ -251,7 +251,6 @@ export class HuascarEngine {
 
   private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
     const maxIterations = config.react.maxIterations;
-    let context = systemPrompt;
     const messages: { role: string; content: string }[] = [
       { role: 'user', content: task },
     ];
@@ -261,7 +260,7 @@ export class HuascarEngine {
 
       const { text } = await generateText({
         model: openai(config.llm.modelId),
-        system: context,
+        system: systemPrompt,
         prompt: messages[messages.length - 1].content,
       });
 
@@ -349,7 +348,7 @@ export class HuascarEngine {
 
     const { text } = await generateText({
       model: openai(config.llm.modelId),
-      system: context + '\n\nHas alcanzado el limite de iteraciones. Proporciona tu mejor respuesta final.',
+      system: systemPrompt + '\n\nHas alcanzado el limite de iteraciones. Proporciona tu mejor respuesta final.',
       prompt: messages[messages.length - 1].content,
     });
 
