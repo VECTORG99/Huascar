@@ -1,20 +1,32 @@
 {
-  "blocked_tool_patterns": ["shell", "sudo"],
+  "blocked_tool_patterns": ["shell", "sudo", "terminal"],
   "blocked_args_substrings": {
     "execute_bash": [
       "rm -rf",
-      "rm -r -f",
+      "rm -r",
+      "rm --recursive",
       "git push --force",
       "git push -f",
+      "git reset --hard",
+      "git clean -f",
       "drop table",
-      "DROP TABLE",
-      "Drop Table",
-      "drop  table",
+      "drop database",
+      "truncate table",
       "format",
       "mkfs",
       "dd if=",
-      "--dangerously-force-approval",
-      "BYPASS_SECRET"
+      "> /dev/sd",
+      "chmod 777",
+      "curl | sh",
+      "wget | sh",
+      "curl | bash",
+      "wget | bash"
+    ],
+    "*": [
+      "bypass_secret",
+      "BYPASS_SECRET",
+      "--dangerously-force"
     ]
-  }
+  },
+  "allowed_tools": []
 }

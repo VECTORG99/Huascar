@@ -313,10 +313,12 @@ export class HuascarEngine {
         const toolDef = c.tools.find(t => t.name === toolName);
         if (toolDef) {
           try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), config.react.mcpTimeoutMs);
-            const result = await c.client.callTool({ name: toolName, arguments: args });
-            clearTimeout(timeout);
+            const timeoutMs = config.react.mcpTimeoutMs;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error(`MCP tool "${toolName}" timed out after ${timeoutMs}ms`)), timeoutMs);
+            });
+            const callPromise = c.client.callTool({ name: toolName, arguments: args });
+            const result = await Promise.race([callPromise, timeoutPromise]);
             const resultContent = result.content as { type: string; text?: string }[] | undefined;
             if (!resultContent) {
               toolResult = `Error: resultado sin contenido de "${toolName}"`;
@@ -333,8 +335,14 @@ export class HuascarEngine {
             }
             console.log(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
           } catch (err: unknown) {
-            toolResult = `Error ejecutando "${toolName}": ${err instanceof Error ? err.message : String(err)}`;
-            console.error(`[HuascarEngine] Error en herramienta: ${err instanceof Error ? err.message : String(err)}`);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            toolResult = `Error ejecutando "${toolName}": ${errMsg}`;
+            console.error(`[HuascarEngine] Error en herramienta: ${errMsg}`);
+            // On timeout, kill the MCP transport to release the process
+            if (errMsg.includes('timed out')) {
+              console.warn(`[HuascarEngine] Killing MCP "${c.name}" transport after timeout`);
+              try { await c.transport.close(); } catch { /* ignore */ }
+            }
           }
           break;
         }
