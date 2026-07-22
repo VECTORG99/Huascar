@@ -1,18 +1,17 @@
-# Stage 1: Install dependencies
-FROM node:20-alpine AS deps
+# Stage 1: Install dependencies and build
+FROM node:20-alpine AS builder
 WORKDIR /app
-COPY agent-creator/package.json agent-creator/package-lock.json ./agent-creator/
-WORKDIR /app/agent-creator
+COPY agent-creator/package.json agent-creator/package-lock.json ./
 RUN npm ci
+COPY agent-creator/ ./
+RUN npm run build
 
-# Stage 2: Run
+# Stage 2: Serve static files
 FROM node:20-alpine AS runner
+RUN npm install -g serve@14
 WORKDIR /app
-COPY --from=deps /app/agent-creator/node_modules ./agent-creator/node_modules
-COPY agent-creator ./agent-creator
+COPY --from=builder /app/dist ./dist
 EXPOSE 5173
-WORKDIR /app/agent-creator
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "const h=require('http');h.get('http://localhost:5173',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
-CMD ["npx", "vite", "--host", "--port", "5173"]
-# ponytail: dev server Vite — cambiar a `npx serve dist` o nginx para produccion
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost:5173/ || exit 1
+CMD ["serve", "-s", "dist", "-l", "5173"]
