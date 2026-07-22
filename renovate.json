@@ -1,0 +1,27 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "baseBranches": ["development"],
+  "labels": ["dependencies"],
+  "rangeStrategy": "pin",
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "priority:medium"]
+    },
+    {
+      "matchPackagePatterns": ["eslint", "prettier", "typescript"],
+      "groupName": "dev tooling"
+    },
+    {
+      "matchPackagePatterns": ["@modelcontextprotocol/*"],
+      "groupName": "MCP SDK"
+    }
+  ],
+  "schedule": ["before 6am on Monday"]
+}
