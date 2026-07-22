@@ -49,6 +49,12 @@ interface SteeringConfig {
   roles: Record<string, SteeringRole>;
 }
 
+// Allowlist of env vars that MCP servers can access via ${VAR} interpolation.
+// Configurable via MCP_ENV_ALLOWLIST env var (comma-separated).
+const MCP_ENV_ALLOWLIST = new Set(
+  (process.env.MCP_ENV_ALLOWLIST || 'GITHUB_TOKEN,GITHUB_PERSONAL_ACCESS_TOKEN,MCP_SERVER_TOKEN').split(',').map(s => s.trim())
+);
+
 export class HuascarEngine {
   private steering: SteeringConfig;
   public activeRole!: SteeringRole;
@@ -68,7 +74,13 @@ export class HuascarEngine {
     if (!env) return undefined;
     const resolved: Record<string, string> = {};
     for (const [key, value] of Object.entries(env)) {
-      resolved[key] = value.replace(/\$\{(\w+)\}/g, (_, name: string) => process.env[name] || '');
+      resolved[key] = value.replace(/\$\{(\w+)\}/g, (_, name: string) => {
+        if (!MCP_ENV_ALLOWLIST.has(name)) {
+          console.warn(`[SECURITY] Blocked env var interpolation: \${${name}} — not in MCP_ENV_ALLOWLIST`);
+          return '';
+        }
+        return process.env[name] || '';
+      });
     }
     return resolved;
   }

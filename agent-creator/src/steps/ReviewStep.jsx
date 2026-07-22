@@ -175,7 +175,7 @@ export default function ReviewStep() {
             <button
               onClick={() => {
                 const config = generated?.config;
-                // Save agent config for CompletionScreen refresh resilience
+                // Save agent config in sessionStorage (not URL) to prevent leaking sensitive config
                 const agentData = {
                   role: answers.role === "CUSTOM" ? answers.roleCustom : answers.role,
                   task: answers.task,
@@ -184,19 +184,14 @@ export default function ReviewStep() {
                 sessionStorage.setItem('huascar_last_agent', JSON.stringify(agentData));
 
                 const dashUrl = import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3000';
+                // Only pass non-sensitive identifiers in URL — config stays in sessionStorage
                 const params = new URLSearchParams({
                   role: agentData.role,
                   task: agentData.task,
+                  source: 'agent-creator',
                 });
-                // Pass full config JSON as URL param for the Dashboard
-                if (config) {
-                  const configJson = JSON.stringify(config);
-                  if (configJson.length < 8000) {
-                    params.set('config', configJson);
-                  }
-                }
                 window.open(`${dashUrl}/?${params}`, '_blank');
-              }}
+              }}}
               className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-medium py-3 px-8 rounded-lg transition"
             >
               Abrir en Dashboard
