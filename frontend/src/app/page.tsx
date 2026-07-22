@@ -52,8 +52,9 @@ export default function Home() {
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://huascar.onrender.com';
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/history`);
+      const res = await fetch(`${apiUrl}/api/history`);
       const data = await res.json();
       setHistory(data.history || []);
     } catch {
@@ -101,7 +102,8 @@ export default function Home() {
         // Transform Agent Creator format to backend format if needed
         if (agentConfig.steering?.system_prompt) body.system_prompt = agentConfig.steering.system_prompt;
       }
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/agent/execute`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://huascar.onrender.com';
+      const res = await fetch(`${apiUrl}/api/agent/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
