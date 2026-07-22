@@ -15,3 +15,4 @@ WORKDIR /app/agent-creator
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "const h=require('http');h.get('http://localhost:5173',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["npx", "vite", "--host", "--port", "5173"]
+# ponytail: dev server Vite — cambiar a `npx serve dist` o nginx para produccion

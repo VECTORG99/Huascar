@@ -60,7 +60,7 @@ export class HuascarEngine {
   constructor(roleKey: string, store?: Store) {
     this.steering = JSON.parse(fs.readFileSync(config.paths.steering, config.rag.encoding));
     this.roleKey = roleKey;
-    this.rag = new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding });
+    this.rag = new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding, store: store ?? undefined });
     this.store = store || null;
   }
 
@@ -224,7 +224,7 @@ export class HuascarEngine {
         }
       }
 
-      const ragContext = this.rag.getContext();
+      const ragContext = await this.rag.getContext(task);
       const systemPrompt = this.activeRole.system_prompt + (ragContext ? '\n\n' + ragContext : '') + mcpContext;
 
       const responseText = !useMock

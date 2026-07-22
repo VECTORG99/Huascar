@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { URL } from 'url';
 import { config } from '../config.js';
+import { Store } from './Store.js';
 
 // ponytail: blocklist-based SSRF prevention. Upgrade to DNS-resolution check if deployed publicly.
 const BLOCKED_HOSTS = [
@@ -15,10 +16,9 @@ function isBlockedUrl(urlStr: string): boolean {
   try {
     const parsed = new URL(urlStr);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
-    // Block by hostname (catches both direct IP and hostname matches)
     return BLOCKED_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
   } catch {
-    return true; // unparseable URL = blocked
+    return true;
   }
 }
 
@@ -28,11 +28,42 @@ export type RagSource =
   | { type: 'inline'; content: string }
   | { type: 'web_url'; url: string };
 
-// ponytail: basic path traversal guard. Upgrade to configurable allow-list if needed.
 const PROJECT_ROOT = path.resolve('.');
 function isPathSafe(target: string): boolean {
   const resolved = path.resolve(target);
   return resolved === PROJECT_ROOT || resolved.startsWith(PROJECT_ROOT + path.sep);
+}
+
+/** Cosine similarity between two equal-length vectors. */
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/** Call OpenAI embedding API directly via fetch. Batching supported. */
+async function getEmbeddings(inputs: string[], model: string): Promise<number[][]> {
+  const res = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model, input: inputs }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Embedding API error ${res.status}: ${body}`);
+  }
+  const data = await res.json() as { data: { embedding: number[] }[] };
+  // Sort by index to match input order
+  data.data.sort((a: any, b: any) => a.index - b.index);
+  return data.data.map((d: { embedding: number[] }) => d.embedding);
 }
 
 export class RagEngine {
@@ -40,10 +71,55 @@ export class RagEngine {
   private loadedContent: string[] = [];
   private maxContentChars: number;
   private encoding: BufferEncoding;
+  private store: Store | null;
 
-  constructor(options?: { maxContentChars?: number; encoding?: BufferEncoding }) {
+  constructor(options?: { maxContentChars?: number; encoding?: BufferEncoding; store?: Store }) {
     this.maxContentChars = options?.maxContentChars ?? config.rag.maxContentChars;
     this.encoding = options?.encoding ?? config.rag.encoding;
+    this.store = options?.store ?? null;
+  }
+
+  private sourceLabel(source: RagSource): string {
+    switch (source.type) {
+      case 'local_file': return source.path;
+      case 'local_directory': return source.path;
+      case 'inline': return 'inline';
+      case 'web_url': return `URL: ${source.url}`;
+      default: return 'unknown';
+    }
+  }
+
+  /** Split text into chunks preserving paragraph/sentence boundaries. */
+  private splitIntoChunks(text: string): string[] {
+    const maxLen = config.rag.chunkSize;
+    const paragraphs = text.split(/\n\n+/);
+    const chunks: string[] = [];
+    let current = '';
+
+    for (const para of paragraphs) {
+      if (!para.trim()) continue;
+      const candidate = current ? current + '\n\n' + para : para;
+      if (candidate.length <= maxLen) {
+        current = candidate;
+      } else {
+        if (current) chunks.push(current);
+        // Paragraph too long — split by sentence
+        const sentences = para.match(/[^.!?\n]+[.!?]*\s*/g) || [para];
+        let sub = '';
+        for (const s of sentences) {
+          const subCandidate = sub ? sub + s : s;
+          if (subCandidate.length <= maxLen) {
+            sub = subCandidate;
+          } else {
+            if (sub) chunks.push(sub);
+            sub = s;
+          }
+        }
+        current = sub;
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks;
   }
 
   private wrapSnippet(label: string, text: string): string {
@@ -52,6 +128,36 @@ export class RagEngine {
     return `--- ${label} ---\n${truncated}\n`;
   }
 
+  /** Embed text chunks and persist to store. Skips if no API key or store. */
+  private async indexChunks(source: string, chunks: string[]): Promise<void> {
+    if (!this.store || !config.hasApiKey) return;
+
+    this.store.deleteChunksBySource(source);
+
+    let hasEmbeddings = false;
+    const batchSize = 20;
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const batch = chunks.slice(i, i + batchSize);
+      let embeddings: number[][] | null = null;
+      try {
+        embeddings = await getEmbeddings(batch, config.rag.embeddingModel);
+        hasEmbeddings = true;
+      } catch (err) {
+        console.warn(`[RagEngine] Error embebiendo lote ${i}-${i + batch.length} de ${source}:`, err instanceof Error ? err.message : String(err));
+      }
+      for (let j = 0; j < batch.length; j++) {
+        this.store.saveChunk({
+          source,
+          chunkIndex: i + j,
+          chunkText: batch[j],
+          embedding: embeddings?.[j] ?? undefined,
+        });
+      }
+    }
+    console.log(`[RagEngine] Indexados ${chunks.length} chunks para "${source}"${hasEmbeddings ? ' con embeddings' : ' sin embeddings'}`);
+  }
+
+  /** Load documents from sources, chunk, store, and embed. */
   async loadSources(sources: RagSource[]): Promise<void> {
     if (this.loadedContent.length > 0) {
       console.warn(`[RagEngine] Reemplazando ${this.loadedContent.length} fuentes cargadas anteriormente.`);
@@ -70,6 +176,7 @@ export class RagEngine {
             const resolved = path.resolve(source.path);
             const content = fs.readFileSync(resolved, this.encoding);
             this.loadedContent.push(this.wrapSnippet(source.path, content));
+            await this.indexChunks(source.path, this.splitIntoChunks(content));
             break;
           }
           case 'local_directory': {
@@ -78,12 +185,15 @@ export class RagEngine {
               break;
             }
             const resolved = path.resolve(source.path);
-            const files = fs.readdirSync(resolved).filter(f => f.endsWith(source.pattern.replace('*.', '.')));
+            const ext = source.pattern.replace('*.', '.');
+            const files = fs.readdirSync(resolved).filter(f => f.endsWith(ext));
             for (const file of files) {
               const filePath = path.join(resolved, file);
               try {
                 const content = fs.readFileSync(filePath, this.encoding);
-                this.loadedContent.push(this.wrapSnippet(path.join(source.path, file), content));
+                const label = path.join(source.path, file);
+                this.loadedContent.push(this.wrapSnippet(label, content));
+                await this.indexChunks(label, this.splitIntoChunks(content));
               } catch (err: unknown) {
                 console.warn(`[RagEngine] Error leyendo ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
               }
@@ -92,6 +202,7 @@ export class RagEngine {
           }
           case 'inline': {
             this.loadedContent.push(this.wrapSnippet('inline', source.content));
+            await this.indexChunks('inline', this.splitIntoChunks(source.content));
             break;
           }
           case 'web_url': {
@@ -112,14 +223,12 @@ export class RagEngine {
                 console.warn(`[RagEngine] Error fetching ${source.url}: HTTP ${response.status}`);
                 break;
               }
-              // Check content-length header before buffering
               const contentLen = response.headers.get('content-length');
               if (contentLen && parseInt(contentLen, 10) > 512 * 1024) {
                 console.warn(`[RagEngine] URL ${source.url} demasiado grande (${contentLen} bytes), saltando.`);
                 break;
               }
               const html = await response.text();
-              // Basic text extraction: strip HTML tags
               const text = html
                 .replace(/<!--[\s\S]*?-->/g, '')
                 .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -129,7 +238,9 @@ export class RagEngine {
                 .replace(/\s+/g, ' ')
                 .trim();
               if (text) {
-                this.loadedContent.push(this.wrapSnippet(`URL: ${source.url}`, text));
+                const label = `URL: ${source.url}`;
+                this.loadedContent.push(this.wrapSnippet(label, text));
+                await this.indexChunks(label, this.splitIntoChunks(text));
               }
             } finally {
               if (timeout) clearTimeout(timeout);
@@ -148,9 +259,49 @@ export class RagEngine {
     }
   }
 
-  getContext(): string {
-    if (this.loadedContent.length === 0) return '';
+  /** Search for chunks semantically similar to query. Returns empty if no embeddings. */
+  async searchSimilar(query: string): Promise<{ text: string; score: number }[]> {
+    if (!config.hasApiKey || !this.store) return [];
 
+    let queryVec: number[];
+    try {
+      const embeddings = await getEmbeddings([query], config.rag.embeddingModel);
+      queryVec = embeddings[0];
+    } catch (err) {
+      console.warn('[RagEngine] Error generando embedding de query:', err instanceof Error ? err.message : String(err));
+      return [];
+    }
+
+    const chunks = this.store.getAllChunks().filter(c => c.embedding);
+    const scored = chunks
+      .map(c => ({
+        text: c.chunk_text,
+        score: cosineSimilarity(queryVec, c.embedding!),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, config.rag.topK);
+
+    return scored;
+  }
+
+  /**
+   * Get RAG context. When query is provided and embeddings exist, performs
+   * semantic search. Falls back to text-based context concatenation.
+   */
+  async getContext(query?: string): Promise<string> {
+    if (query && config.hasApiKey && this.store) {
+      const results = await this.searchSimilar(query);
+      if (results.length > 0) {
+        const context = results
+          .map(r => `[relevancia: ${(r.score * 100).toFixed(0)}%]\n${r.text}`)
+          .join('\n\n---\n\n');
+        console.log(`[RagEngine] Busqueda semantica: ${results.length} resultados para query "${query.slice(0, 60)}..."`);
+        return `## Contexto RAG (busqueda semantica):\n\n${context}`;
+      }
+    }
+
+    // Fallback: text-based concatenation
+    if (this.loadedContent.length === 0) return '';
     let combined = this.loadedContent.join('\n\n');
     if (combined.length > this.maxContentChars) {
       combined = combined.slice(0, this.maxContentChars) + '\n\n... [truncado - el contenido excede el maximo]';

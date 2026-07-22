@@ -5,17 +5,31 @@ services:
       dockerfile: Dockerfile.backend
     ports:
       - "3001:3001"
-    env_file:
-      - path: .env
-        required: false
+    env_file: .env
     volumes:
       - huascar-data:/app/data
+    restart: unless-stopped
     healthcheck:
       test: wget -qO- http://localhost:3001/api/health || exit 1
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
+    networks:
+      - huascar-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://backend:3001
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - huascar-network
 

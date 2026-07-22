@@ -41,6 +41,9 @@ export const config = {
   rag: {
     maxContentChars: envInt('RAG_MAX_CONTENT_CHARS', 16000),
     encoding: envEncoding('FILE_ENCODING', 'utf8'),
+    embeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+    chunkSize: envInt('EMBEDDING_CHUNK_SIZE', 500),
+    topK: envInt('EMBEDDING_TOP_K', 5),
   },
   store: {
     historyLimit: envInt('HISTORY_LIMIT_DEFAULT', 20),

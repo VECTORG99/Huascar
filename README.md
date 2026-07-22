@@ -43,13 +43,13 @@ Inspirado en como Kiro simplifica la interaccion con modelos, Huascar abstrae la
 ## Stack
 
 | Componente | Tecnologia |
-|---|---|
-| Backend | Node.js, Express, TypeScript |
-| Frontend (Dashboard) | Next.js, TailwindCSS |
+|---|---|---|
+| Backend | Node.js, Express, TypeScript, SQLite |
+| Frontend (Dashboard) | Next.js 16, TailwindCSS v4 |
 | Frontend (Agent Creator) | Vite, React, JavaScript, TailwindCSS v4 |
 | LLM | Vercel AI SDK (OpenAI, Anthropic) |
 | MCP | @modelcontextprotocol/sdk |
-| Containerizacion | Docker, docker-compose |
+| Containerizacion | Docker multi-stage, docker compose v2 |
 
 ---
 
@@ -91,7 +91,8 @@ Servidores MCP que el agente puede usar como herramientas.
 ```
 
 ### `rag.json`
-Fuentes de conocimiento del agente (vectorizacion planeada).
+Fuentes de conocimiento del agente: fuentes inline, web_url, GitHub files.
+Se vectorizan automaticamente (embeddings via OpenAI + SQLite store).
 
 ---
 
@@ -114,9 +115,19 @@ npm run dev       # http://localhost:5173
 ### Docker
 
 ```bash
-docker compose up --build
-# Backend:  http://localhost:3001
-# Frontend: http://localhost:5173
+make docker-build   # o: docker compose build
+make docker-up      # o: docker compose up -d
+
+# Servicios:
+# Backend:       http://localhost:3001
+# Dashboard:     http://localhost:3000
+# Agent Creator: http://localhost:5173
+
+# Ver logs:
+make docker-logs
+
+# Detener:
+make docker-down
 ```
 
 ### Con LLM real
@@ -128,74 +139,32 @@ npm run dev
 
 ---
 
-## Deploy (Stack Gratuito)
+## Deploy
 
-**Problema:** Huascar usa SQLite, que necesita almacenamiento persistente. En tiers gratis
-la mayoria de plataformas no ofrecen discos persistentes.
+Ver [`docs/deployment.md`](docs/deployment.md) para guia completa.
 
-### Opcion A: Fly.io (recomendada)
-
-Fly.io da **3 VMs gratis** con **3GB de volumen persistente** cada una.
-Los archivos `fly.backend.toml` y `fly.frontend.toml` ya estan listos en el repo.
+### VPS + Docker Compose (recomendado)
 
 ```bash
-# 1. Backend
-fly launch --name huascar-backend \
-  --config fly.backend.toml \
-  --region iad \
-  --no-deploy
-
-fly volumes create huascar_data --app huascar-backend --size 1 --region iad
-fly secrets set --app huascar-backend OPENAI_API_KEY=sk-...
-fly deploy --app huascar-backend --config fly.backend.toml
-
-# 2. Agent Creator
-fly launch --name huascar-agent-creator \
-  --config fly.frontend.toml \
-  --region iad \
-  --no-deploy
-
-fly deploy --app huascar-agent-creator --config fly.frontend.toml
-```
-
-### Opcion B: Render + Vercel
-
-- **Backend** en Render (Web Service, tier gratis, pero **duerme tras inactividad**)
-- **Frontend** en Vercel (static build, siempre activo)
-
-```bash
-# Backend en Render
-# 1. Crea Web Service desde el repo
-#    Runtime: Docker
-#    Dockerfile: Dockerfile.backend
-# 2. Agrega variables: OPENAI_API_KEY
-# 3. Render puede tardar ~2min en responder (free tier se apaga solo)
-
-# Frontend en Vercel
-cd agent-creator
-# Reemplaza VITE_API_URL por la URL de Render
-VITE_API_URL=https://huascar-backend.onrender.com npm run build
-# Sube el dist/ a Vercel
-npx vercel --prod
-```
-
-**Nota:** Render free tier **no tiene disco persistente**. Los datos se pierden al
-reiniciar. Usa esta opcion solo para pruebas/demos, no para produccion.
-
-### Opcion C: VPS Gratuito + Docker Compose
-
-Oracle Cloud Always Free, Google Cloud Free Tier (e2-micro), o Azure Free Tier:
-
-```bash
-# En la VM
 git clone https://github.com/VECTORG99/Huascar.git
 cd Huascar
-echo "OPENAI_API_KEY=sk-..." > .env
-docker compose up -d --build
+cp .env.example .env
+# Editar .env con OPENAI_API_KEY, etc.
+make docker-build
+make docker-up
 ```
 
-El VPS free tipicamente da 1-2GB RAM + disco persistente. Docker Compose
-funciona completo: backend + frontend + DB volume.
+### Render (solo backend)
+
+Conecta el repo desde el dashboard de Render. Usa `render.yaml` para configuracion automatica o manualmente:
+
+| Campo | Valor |
+|-------|-------|
+| Runtime | `Docker` |
+| Dockerfile | `Dockerfile.backend` |
+| Plan | Free (512MB RAM) |
+
+> **Nota:** Free tier sin disco persistente — datos SQLite se pierden al reiniciar.
 
 ---
 
@@ -208,16 +177,9 @@ El workflow `ci.yml` corre en cada push y PR:
 | TypeScript check | `npx tsc --noEmit` |
 | Unit tests | `npm run test:unit` |
 | Integration tests | `node test/api_test.mjs` |
-| Deploy a Fly.io | Solo en push a `master` |
 
-Para activar deploy automatico necesitas configurar un **secret** en GitHub:
-
-1. Ve a Settings → Secrets and variables → Actions
-2. Agrega `FLY_API_TOKEN` con un token de Fly.io:
-   ```bash
-   fly tokens create deploy --org personal
-   ```
-3. El workflow deploya ambos servicios automaticamente al hacer push a `master`
+Render y Vercel deployan automaticamente al hacer push a `master` cuando
+conectas el repo desde sus dashboards. No necesitas secrets de CI adicionales.
 
 ---
 
@@ -280,18 +242,24 @@ huascar/
 │   │   ├── mcps.json       # Servidores MCP
 │   │   └── rag.json        # Fuentes de conocimiento
 │   ├── engine/
-│   │   └── HuascarEngine.ts  # Motor con ReAct + MCP
-│   ├── server.ts           # API Express
-│   └── ki/                 # (reservado)
+│   │   ├── HuascarEngine.ts  # Motor con ReAct + MCP
+│   │   ├── RagEngine.ts      # RAG con embeddings vectoriales
+│   │   ├── Store.ts          # SQLite: historial + vectores
+│   │   └── init.ts           # DB init / healthcheck
+│   ├── server.ts             # API Express
+│   └── config.ts             # Config centralizada
 ├── agent-creator/          # Frontend: cuestionario (Vite + React)
-├── frontend/               # Frontend: dashboard (Next.js)
-├── docs/                   # Documentacion extensa
+├── frontend/               # Frontend: dashboard (Next.js 16)
+├── docs/                   # Documentacion
 │   ├── architecture.md
-│   ├── use_cases.md
-│   └── implementation_plan.md
+│   ├── deployment.md       # Guia de deploy
+│   └── use_cases.md
 ├── Dockerfile.backend
+├── Dockerfile.frontend     # Frontend multi-stage
 ├── Dockerfile.agent-creator
-├── docker-compose.yml
+├── docker-compose.yml      # 3 servicios (backend + frontend + agent-creator)
+├── Makefile                # Build/test/docker automation
+├── render.yaml
 └── README.md
 ```
 
@@ -315,8 +283,8 @@ huascar/
 - [x] Hooks de seguridad (human-in-the-loop)
 - [x] Ejecucion de servidores MCP
 - [x] Generacion de configuracion via cuestionario
-- [x] Dockerizacion
-- [ ] RAG vectorial (embeddings + busqueda semantica)
+- [x] Dockerizacion multi-stage (3 servicios)
+- [x] RAG vectorial (embeddings + busqueda semantica con SQLite)
 - [ ] Evaluacion de agentes (metricas y tests)
 - [ ] Historial de ejecuciones
 - [ ] Autenticacion y multi-usuario

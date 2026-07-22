@@ -127,9 +127,20 @@ export default function ReviewStep() {
       <button
         onClick={handleGenerate}
         disabled={loading}
-        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 px-8 rounded-lg transition"
+        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 px-8 rounded-lg transition flex items-center justify-center gap-2"
       >
-        {loading ? "Generando agente..." : "Generar Configuraci\u00f3n"}
+        {loading ? (
+          <>
+            <span className="flex gap-1">
+              <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse-dot" style={{ animationDelay: "0s" }} />
+              <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse-dot" style={{ animationDelay: "0.15s" }} />
+              <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse-dot" style={{ animationDelay: "0.3s" }} />
+            </span>
+            <span>Generando agente...</span>
+          </>
+        ) : (
+          "Generar Configuraci\u00f3n"
+        )}
       </button>
 
       {error && (
@@ -160,12 +171,50 @@ export default function ReviewStep() {
             </div>
           )}
 
-          <button
-            onClick={nextStep}
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 px-8 rounded-lg transition"
-          >
-            Finalizar
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                const config = generated?.config;
+                // Save agent config for CompletionScreen refresh resilience
+                const agentData = {
+                  role: answers.role === "CUSTOM" ? answers.roleCustom : answers.role,
+                  task: answers.task,
+                  config,
+                };
+                sessionStorage.setItem('huascar_last_agent', JSON.stringify(agentData));
+
+                const dashUrl = import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3000';
+                const params = new URLSearchParams({
+                  role: agentData.role,
+                  task: agentData.task,
+                });
+                // Pass full config JSON as URL param for the Dashboard
+                if (config) {
+                  const configJson = JSON.stringify(config);
+                  if (configJson.length < 8000) {
+                    params.set('config', configJson);
+                  }
+                }
+                window.open(`${dashUrl}/?${params}`, '_blank');
+              }}
+              className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-medium py-3 px-8 rounded-lg transition"
+            >
+              Abrir en Dashboard
+            </button>
+            <button
+              onClick={() => {
+                sessionStorage.setItem('huascar_last_agent', JSON.stringify({
+                  role: answers.role === "CUSTOM" ? answers.roleCustom : answers.role,
+                  task: answers.task,
+                  config: generated?.config,
+                }));
+                nextStep();
+              }}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 px-8 rounded-lg transition"
+            >
+              Finalizar
+            </button>
+          </div>
         </div>
       )}
     </div>

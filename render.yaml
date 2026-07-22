@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: huascar-backend
+    runtime: docker
+    repo: https://github.com/VECTORG99/hackathon-agent-builder
+    dockerfilePath: ./Dockerfile.backend
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: LLM_MOCK_MODE
+        value: "true"
+      - key: HUASCAR_DB_PATH
+        value: /data/huascar.db
+      - key: BYPASS_SECRET
+        generateValue: true
