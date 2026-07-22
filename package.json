@@ -4,9 +4,21 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:agent-creator": "cd agent-creator && npm run dev",
     "start": "tsx src/server.ts",
     "test": "node test/api_test.mjs",
-    "test:unit": "node --import tsx/esm --test test/*.test.mjs"
+    "test:unit": "node --import tsx/esm --test test/*.test.mjs",
+    "test:all": "npm run test:unit && npm test",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist data/*.db",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
