@@ -1,14 +1,14 @@
 import fs from 'fs';
 import { config } from '../config.js';
 import { agentHooks } from '../kiro/hooks.js';
-import { generateText, isStepCount, jsonSchema, tool, type ToolSet } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { isStepCount, jsonSchema, tool, type ToolSet } from 'ai';
 import { RagEngine, RagSource } from './RagEngine.js';
 import { Store } from './Store.js';
 import { logger } from '../logger.js';
 import { EngineError, ErrorCodes } from '../errors.js';
 import { ConnectedMcpClient, mcpConnectionPool } from './McpConnectionPool.js';
 import type { JSONSchema7 } from 'json-schema';
+import { generateTextWithFallback } from './LlmProvider.js';
 
 interface RagConfig {
   knowledge_bases: RagSource[];
@@ -195,8 +195,7 @@ export class HuascarEngine {
 
 
   private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
-    const { text } = await generateText({
-      model: openai(config.llm.modelId),
+    const { text } = await generateTextWithFallback({
       system: systemPrompt,
       prompt: task,
       tools: buildAiTools(this.mcpClients),
