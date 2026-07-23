@@ -25,7 +25,7 @@ export const executeRequestSchema = z.object({
 export const creatorEvaluateSchema = z.object({
   workflowVersion: z.string().optional(),
   catalogVersion: z.string().optional(),
-  answers: z.record(z.unknown()),
+  answers: z.record(z.string(), z.unknown()),
 });
 
 export const commitApprovalSchema = z.object({

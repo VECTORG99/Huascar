@@ -5,9 +5,11 @@ export type VectorSearchResult = { text: string; score: number };
 export function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
@@ -78,7 +80,7 @@ export class VectorIndex {
 
   private projection(vector: number[], table: number, bit: number): number {
     let sum = 0;
-    for (let i = 0; i < vector.length; i++) sum += vector[i] * this.weight(i, table, bit);
+    for (let i = 0; i < vector.length; i++) sum += (vector[i] ?? 0) * this.weight(i, table, bit);
     return sum;
   }
 

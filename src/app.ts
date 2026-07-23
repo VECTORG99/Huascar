@@ -76,7 +76,7 @@ export { executeLimiter, creatorLimiter };
 app.use('/api/v1/creator', creatorLimiter, creatorPublicRouter);
 
 // ponytail: global request timeout. Per-endpoint overrides if needed later.
-app.use((req, res, next) => {
+app.use((_req, res, next) => {
   const timer = setTimeout(() => {
     if (!res.headersSent) res.status(503).json({ error: 'Request timeout' });
   }, config.server.requestTimeoutMs);

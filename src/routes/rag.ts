@@ -3,7 +3,7 @@ import type { Store } from '../engine/Store.js';
 
 export function ragRouter(store: Store): Router {
   const router = Router();
-  router.get('/rag/sources', (req, res, next) => {
+  router.get('/rag/sources', (_req, res, next) => {
     try {
       res.json({ sources: store.getRagSources() });
     } catch (error: unknown) {
