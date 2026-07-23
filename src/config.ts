@@ -49,11 +49,17 @@ export const config = {
     historyLimit: envInt('HISTORY_LIMIT_DEFAULT', 20),
   },
   llm: {
+    providerChain: process.env.LLM_PROVIDER_CHAIN || 'openai',
     modelId: process.env.MODEL_ID || 'gpt-4o',
+    openaiModel: process.env.OPENAI_MODEL || process.env.MODEL_ID || 'gpt-4o',
+    anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest',
+    localModel: process.env.LOCAL_MODEL || 'gpt-oss:20b',
+    localBaseUrl: process.env.LOCAL_BASE_URL || 'http://localhost:11434/v1',
+    localApiKey: process.env.LOCAL_API_KEY || 'local',
     mockMode: process.env.LLM_MOCK_MODE === 'true',
   },
   mcp: {
     stderr: envStderr('MCP_STDERR', 'ignore'),
   },
-  hasApiKey: !!process.env.OPENAI_API_KEY,
+  hasApiKey: !!(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.LOCAL_BASE_URL),
 };
