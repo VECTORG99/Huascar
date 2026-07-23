@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths-ignore:
       - '*.md'
       - 'docs/**'
@@ -55,7 +55,7 @@ jobs:
           fi
 
       - name: Create release tag
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/master'
         run: |
           CURRENT=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT"
@@ -65,7 +65,7 @@ jobs:
           git push origin "v${CURRENT}" || true
 
       - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/master'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
