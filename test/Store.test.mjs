@@ -47,4 +47,16 @@ describe('Store', () => {
       assert.ok(history[i - 1].created_at >= history[i].created_at);
     }
   });
+
+  it('close is idempotent', () => {
+    const dbPath = '/tmp/huascar_test_close_unit.db';
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const localStore = new Store(dbPath);
+    assert.strictEqual(localStore.isOpen(), true);
+    localStore.close();
+    localStore.close();
+    assert.strictEqual(localStore.isOpen(), false);
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
 });

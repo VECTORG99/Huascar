@@ -24,6 +24,7 @@ export interface DocumentChunk {
 export class Store {
   private db: Database.Database;
   private dbPath: string;
+  private closed = false;
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || config.paths.db;
@@ -109,7 +110,14 @@ export class Store {
     return row.count;
   }
 
+  isOpen(): boolean {
+    return !this.closed;
+  }
+
   close(): void {
+    if (this.closed) return;
+    this.db.pragma('wal_checkpoint(TRUNCATE)');
     this.db.close();
+    this.closed = true;
   }
 }
