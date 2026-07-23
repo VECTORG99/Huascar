@@ -70,6 +70,34 @@ describe('Store', () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
+  it('persists registered agents and records executions', () => {
+    const dbPath = '/tmp/huascar_test_agents_unit.db';
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const localStore = new Store(dbPath);
+    const config = { steering: { roles: [{ id: 'dev', prompt: 'You code.' }] }, tools: ['shell'] };
+
+    const created = localStore.createAgent('Coder', config, 1000);
+    assert.strictEqual(created.name, 'Coder');
+    assert.deepStrictEqual(JSON.parse(created.config), config);
+    assert.strictEqual(localStore.listAgents().length, 1);
+
+    const updated = localStore.updateAgent(created.id, 'Coder 2', { tools: [] }, 2000);
+    assert.strictEqual(updated.name, 'Coder 2');
+    assert.strictEqual(updated.updated_at, 2000);
+
+    const executed = localStore.recordAgentExecution(created.id, 3000);
+    assert.strictEqual(executed.execution_count, 1);
+    assert.strictEqual(executed.last_executed_at, 3000);
+
+    localStore.close();
+    const reopened = new Store(dbPath);
+    assert.strictEqual(reopened.getAgent(created.id).execution_count, 1);
+    assert.strictEqual(reopened.deleteAgent(created.id), true);
+    assert.strictEqual(reopened.getAgent(created.id), null);
+    reopened.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
   it('creates sessions and orders messages oldest first', () => {
     const session = store.createSession('s1', 'role', 1000, '{"a":1}');
     assert.deepStrictEqual(session, { id: 's1', role: 'role', created_at: 1000, last_active_at: 1000, metadata: '{"a":1}' });

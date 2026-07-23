@@ -8,6 +8,7 @@ import { requireAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 import { agentRouter } from './routes/agent.js';
+import { agentsRouter } from './routes/agents.js';
 import { healthRouter } from './routes/health.js';
 import { historyRouter } from './routes/history.js';
 import { hooksRouter } from './routes/hooks.js';
@@ -63,6 +64,7 @@ app.use('/api', (req, res, next) => {
 app.use('/api', historyRouter(store));
 app.use('/api', ragRouter(store));
 app.use('/api', rolesRouter());
+app.use('/api', agentsRouter(store));
 app.use('/api', agentRouter(store));
 app.use('/api', hooksRouter(commitApprovals));
 

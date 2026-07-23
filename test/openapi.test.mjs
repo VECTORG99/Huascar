@@ -18,6 +18,8 @@ describe('openapi endpoint', () => {
       assert.strictEqual(body.openapi, '3.1.0');
       assert.ok(body.paths['/api/health']);
       assert.ok(body.paths['/api/agent/execute']);
+      assert.ok(body.paths['/api/agents']);
+      assert.ok(body.paths['/api/agents/{id}/execute']);
       assert.ok(body.paths['/api/hooks/commit-approval/{id}']);
       assert.ok(body.paths['/api/rag/sources']);
       assert.ok(body.paths['/api/v1/creator/catalog']);
