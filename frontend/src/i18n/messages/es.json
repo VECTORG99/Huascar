@@ -1,0 +1,32 @@
+{
+  "common": {
+    "loading": "Cargando...",
+    "error": "Error",
+    "retry": "Reintentar",
+    "back": "Anterior",
+    "next": "Siguiente",
+    "continue": "Continuar",
+    "cancel": "Cancelar",
+    "download": "Descargar",
+    "close": "Cerrar"
+  },
+  "creator": {
+    "title": "Huascar Creator",
+    "preparing": "Preparando el Creator",
+    "loadingCatalog": "Cargando catálogo y árbol de decisiones...",
+    "evaluating": "Evaluando respuestas...",
+    "generating": "Compilando bundle...",
+    "reviewTitle": "Tu agente está listo para compilarse",
+    "bundleGenerated": "Bundle generado",
+    "createAnother": "Crear otro agente",
+    "generate": "Generar configuración",
+    "skip": "Saltar tutorial"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "execute": "Desplegar y Ejecutar",
+    "executing": "Ejecutando...",
+    "history": "Historial",
+    "noHistory": "No hay ejecuciones registradas"
+  }
+}

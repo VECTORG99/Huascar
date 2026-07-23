@@ -1,6 +1,10 @@
 {
   "name": "huascar",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "frontend"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
