@@ -3,6 +3,7 @@ import assert from 'node:assert';
 
 describe('HuascarEngine', () => {
   let HuascarEngine;
+  let buildAiTools;
 
   before(async () => {
     process.env.LLM_MOCK_MODE = 'true';
@@ -10,6 +11,7 @@ describe('HuascarEngine', () => {
     delete process.env.OPENAI_API_KEY;
     const mod = await import('../src/engine/HuascarEngine.js');
     HuascarEngine = mod.HuascarEngine;
+    buildAiTools = mod.buildAiTools;
   });
 
   it('resolves role on executeTask', async () => {
@@ -71,6 +73,32 @@ describe('HuascarEngine', () => {
 
     config.llm.mockMode = previousMock;
     config.hasApiKey = previousHasApiKey;
+  });
+
+  it('builds structured AI tools that call hooks and MCP with object args', async () => {
+    const calls = [];
+    const aiTools = buildAiTools([
+      {
+        name: 'server',
+        client: {
+          callTool: async call => {
+            calls.push(call);
+            return { content: [{ type: 'text', text: 'ok' }] };
+          },
+        },
+        transport: {},
+        tools: [{ name: 'search', description: 'Search', inputSchema: { type: 'object' } }],
+      },
+    ], { before_action: (name, args) => calls.push({ hook: name, args }) });
+
+    const args = { query: 'no USE_TOOL text' };
+    const result = await aiTools.search.execute(args, {});
+
+    assert.strictEqual(result, 'ok');
+    assert.deepStrictEqual(calls, [
+      { hook: 'search', args },
+      { name: 'search', arguments: args },
+    ]);
   });
 
 });
