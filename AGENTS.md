@@ -1,6 +1,6 @@
 # Huascar — AI-Driven Development Directives
 
-Project-state source for agents: read root `CONTEXT.md` before changing architecture, routes, persistence, RAG, auth, deployment, or frontend/backend integration. Read `docs/CONVENTIONS.md` before code changes.
+Project-state source for agents: read root `CONTEXT.md` before changing architecture, routes, persistence, RAG, auth, deployment, or frontend/backend integration. Read `docs/CONVENTIONS.md` before code changes. Use `CONTRIBUTING.md` for AI contributor recipes and PR quality gates.
 
 ## 1. Modalidad de Trabajo: AI-Driven Development
 
