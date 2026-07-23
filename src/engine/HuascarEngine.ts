@@ -44,7 +44,7 @@ export interface HuascarEngineDeps {
   generateTextWithFallback?: typeof generateTextWithFallback;
 }
 
-export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks = agentHooks): ToolSet {
+export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks = agentHooks, onToolExecution?: (toolName: string) => void): ToolSet {
   const aiTools: ToolSet = {};
 
   for (const c of mcpClients) {
@@ -55,6 +55,7 @@ export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks
         inputSchema: jsonSchema((mcpTool.inputSchema ?? { type: 'object', additionalProperties: true }) as JSONSchema7),
         execute: async (args: unknown) => {
           const toolArgs = args as Record<string, unknown>;
+          onToolExecution?.(toolName);
           hooks.before_action(toolName, toolArgs);
 
           const timeoutMs = config.react.mcpTimeoutMs;
@@ -163,7 +164,7 @@ export class HuascarEngine {
     logger.info(`[HuascarEngine] Tarea: ${task}`);
 
     try {
-      const useMock = config.llm.mockMode || !config.hasApiKey;
+      const useMock = config.llm.mockMode || !config.hasLlmProvider;
 
       if (!useMock) {
         await this.connectMcpServers();
@@ -214,12 +215,13 @@ export class HuascarEngine {
 
 
   private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
+    let toolExecuted = false;
     const { text } = await this.deps.generateTextWithFallback({
       system: systemPrompt,
       prompt: task,
-      tools: buildAiTools(this.mcpClients),
+      tools: buildAiTools(this.mcpClients, agentHooks, () => { toolExecuted = true; }),
       stopWhen: isStepCount(config.react.maxIterations),
-    });
+    }, undefined, undefined, () => !toolExecuted);
 
     logger.info(`[HuascarEngine] Respuesta LLM:\n${text}`);
     return text;

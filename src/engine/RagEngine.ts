@@ -132,7 +132,7 @@ export class RagEngine {
 
   /** Embed text chunks and persist to store. Skips if no API key or store. */
   private async indexChunks(source: string, chunks: string[]): Promise<void> {
-    if (!this.store || !config.hasApiKey) return;
+    if (!this.store || !config.hasEmbeddingApiKey) return;
 
     this.store.deleteChunksBySource(source);
 
@@ -263,7 +263,7 @@ export class RagEngine {
 
   /** Search for chunks semantically similar to query. Returns empty if no embeddings. */
   async searchSimilar(query: string): Promise<{ text: string; score: number }[]> {
-    if (!config.hasApiKey || !this.store) return [];
+    if (!config.hasEmbeddingApiKey || !this.store) return [];
 
     let queryVec: number[];
     try {
@@ -291,7 +291,7 @@ export class RagEngine {
    * semantic search. Falls back to text-based context concatenation.
    */
   async getContext(query?: string): Promise<string> {
-    if (query && config.hasApiKey && this.store) {
+    if (query && config.hasEmbeddingApiKey && this.store) {
       const results = await this.searchSimilar(query);
       if (results.length > 0) {
         const context = results

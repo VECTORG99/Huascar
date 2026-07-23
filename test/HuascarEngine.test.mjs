@@ -53,9 +53,9 @@ describe('HuascarEngine', () => {
   it('prefers explicit systemPrompt for existing roles', async () => {
     const { config } = await import('../src/config.js');
     const previousMock = config.llm.mockMode;
-    const previousHasApiKey = config.hasApiKey;
+    const previousHasLlmProvider = config.hasLlmProvider;
     config.llm.mockMode = false;
-    config.hasApiKey = true;
+    config.hasLlmProvider = true;
 
     const engine = new HuascarEngine('PR_REVIEWER');
     engine.connectMcpServers = async () => {};
@@ -72,15 +72,15 @@ describe('HuascarEngine', () => {
     assert.strictEqual(capturedPrompt, 'explicit prompt');
 
     config.llm.mockMode = previousMock;
-    config.hasApiKey = previousHasApiKey;
+    config.hasLlmProvider = previousHasLlmProvider;
   });
 
   it('uses injected dependencies instead of filesystem/API', async () => {
     const { config } = await import('../src/config.js');
     const previousMock = config.llm.mockMode;
-    const previousHasApiKey = config.hasApiKey;
+    const previousHasLlmProvider = config.hasLlmProvider;
     config.llm.mockMode = false;
-    config.hasApiKey = true;
+    config.hasLlmProvider = true;
 
     let mcpCalled = false;
     let llmCalled = false;
@@ -103,7 +103,7 @@ describe('HuascarEngine', () => {
     assert.strictEqual(llmCalled, true);
 
     config.llm.mockMode = previousMock;
-    config.hasApiKey = previousHasApiKey;
+    config.hasLlmProvider = previousHasLlmProvider;
   });
 
   it('builds structured AI tools that call hooks and MCP with object args', async () => {
