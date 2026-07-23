@@ -4,26 +4,33 @@ import cors from 'cors';
 import crypto from 'crypto';
 import { config } from './config.js';
 import { HuascarEngine } from './engine/HuascarEngine.js';
+import { MigrationRunner } from './engine/Migrations.js';
+import migration001 from './engine/migrations/001_create_executions.js';
+import migration002 from './engine/migrations/002_create_rag_documents.js';
 import { Store } from './engine/Store.js';
 import { resolveApproval, getApprovalStatus } from './kiro/hooks.js';
 import { creatorRouter } from './creator/router.js';
 import { requireAuth } from './middleware/auth.js';
 
 const app = express();
-const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173').split(',').map(o => o.trim());
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, curl, health checks)
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
-}));
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim());
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (server-to-server, curl, health checks)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+  }),
+);
 app.use(express.json({ limit: '128kb' }));
 app.use('/api/v1/creator', creatorRouter);
 
@@ -40,7 +47,11 @@ app.use((req, res, next) => {
 
 // --- Monitoring ---
 const startTime = Date.now();
-const metrics = { totalRequests: 0, requestsByPath: {} as Record<string, number>, errorsByPath: {} as Record<string, number> };
+const metrics = {
+  totalRequests: 0,
+  requestsByPath: {} as Record<string, number>,
+  errorsByPath: {} as Record<string, number>,
+};
 
 app.use((req, res, next) => {
   const reqId = crypto.randomUUID().slice(0, 8);
@@ -50,7 +61,15 @@ app.use((req, res, next) => {
 
   res.on('finish', () => {
     const duration = Date.now() - t0;
-    const line = { t: new Date().toISOString(), reqId, method: req.method, path: req.path, status: res.statusCode, duration, len: res.get('content-length') || 0 };
+    const line = {
+      t: new Date().toISOString(),
+      reqId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration,
+      len: res.get('content-length') || 0,
+    };
     console.log(JSON.stringify(line));
     if (res.statusCode >= 400) metrics.errorsByPath[req.path] = (metrics.errorsByPath[req.path] || 0) + 1;
   });
@@ -66,15 +85,23 @@ app.get('/api/metrics', (req, res) => {
     }
   }
   const uptime = Math.floor((Date.now() - startTime) / 1000);
-  res.json({ uptime, totalRequests: metrics.totalRequests, requestsByPath: metrics.requestsByPath, errorsByPath: metrics.errorsByPath });
+  res.json({
+    uptime,
+    totalRequests: metrics.totalRequests,
+    requestsByPath: metrics.requestsByPath,
+    errorsByPath: metrics.errorsByPath,
+  });
 });
 // ---
 
-const store = new Store();
+const migrationRunner = new MigrationRunner();
+migrationRunner.register(migration001);
+migrationRunner.register(migration002);
+const store = new Store(undefined, migrationRunner);
 
 // --- Public routes (no auth required) ---
 app.get('/api/health', (req, res) => {
-    res.json({ status: "Huascar Backend Online" });
+  res.json({ status: 'Huascar Backend Online' });
 });
 
 // --- Auth middleware for all subsequent /api routes ---
@@ -85,112 +112,115 @@ app.use('/api', (req, res, next) => {
 });
 
 // In-memory store for HITL approvals (replace with DB in production)
-const commitApprovals = new Map<string, { status: 'pending' | 'approved' | 'rejected'; diffContext: string; createdAt: string }>();
+const commitApprovals = new Map<
+  string,
+  { status: 'pending' | 'approved' | 'rejected'; diffContext: string; createdAt: string }
+>();
 
 app.get('/api/history', (req, res, next) => {
-    try {
-        const parsed = parseInt(req.query.limit as string, 10);
-        const limit = !isNaN(parsed) ? parsed : config.store.historyLimit;
-        const records = store.getHistory(limit);
-        res.json({ history: records });
-    } catch (error: unknown) {
-        next(error);
-    }
+  try {
+    const parsed = parseInt(req.query.limit as string, 10);
+    const limit = !isNaN(parsed) ? parsed : config.store.historyLimit;
+    const records = store.getHistory(limit);
+    res.json({ history: records });
+  } catch (error: unknown) {
+    next(error);
+  }
 });
 
 app.post('/api/agent/execute', async (req, res, next) => {
-    const { task, role, system_prompt, config: agentConfig } = req.body;
+  const { task, role, system_prompt, config: agentConfig } = req.body;
 
-    if (!task || !role) {
-        return res.status(400).json({ error: "Faltan parámetros 'task' o 'role'" });
-    }
-    if (typeof task !== 'string' || task.length > 10000) {
-        return res.status(400).json({ error: 'task debe ser un texto de maximo 10000 caracteres' });
-    }
-    if (typeof role !== 'string' || role.length > 200) {
-        return res.status(400).json({ error: 'role debe ser un texto de maximo 200 caracteres' });
-    }
+  if (!task || !role) {
+    return res.status(400).json({ error: "Faltan parámetros 'task' o 'role'" });
+  }
+  if (typeof task !== 'string' || task.length > 10000) {
+    return res.status(400).json({ error: 'task debe ser un texto de maximo 10000 caracteres' });
+  }
+  if (typeof role !== 'string' || role.length > 200) {
+    return res.status(400).json({ error: 'role debe ser un texto de maximo 200 caracteres' });
+  }
 
-    try {
-        const engine = new HuascarEngine(role, store);
-        const result = await engine.executeTask(task, system_prompt, agentConfig);
-        res.json(result);
-    } catch (error: unknown) {
-        next(error);
-    }
+  try {
+    const engine = new HuascarEngine(role, store);
+    const result = await engine.executeTask(task, system_prompt, agentConfig);
+    res.json(result);
+  } catch (error: unknown) {
+    next(error);
+  }
 });
 
 app.post('/api/hooks/commit-approval', (req, res, next) => {
-    try {
-        const { diffContext } = req.body;
-        if (typeof diffContext !== 'undefined' && typeof diffContext !== 'string') {
-            return res.status(400).json({ error: 'diffContext debe ser un texto' });
-        }
-        const id = crypto.randomUUID();
-        commitApprovals.set(id, { status: 'pending', diffContext: diffContext || '', createdAt: new Date().toISOString() });
-        setTimeout(() => commitApprovals.delete(id), 60000);
-        res.json({ id, status: 'pending' });
-    } catch (error: unknown) {
-        next(error);
+  try {
+    const { diffContext } = req.body;
+    if (typeof diffContext !== 'undefined' && typeof diffContext !== 'string') {
+      return res.status(400).json({ error: 'diffContext debe ser un texto' });
     }
+    const id = crypto.randomUUID();
+    commitApprovals.set(id, { status: 'pending', diffContext: diffContext || '', createdAt: new Date().toISOString() });
+    setTimeout(() => commitApprovals.delete(id), 60000);
+    res.json({ id, status: 'pending' });
+  } catch (error: unknown) {
+    next(error);
+  }
 });
 
 app.post('/api/hooks/commit-approval/:id', (req, res, next) => {
-    try {
-        const { id } = req.params;
-        const { approved } = req.body;
-        if (typeof approved !== 'boolean') {
-            return res.status(400).json({ error: 'approved debe ser booleano' });
-        }
-        const record = commitApprovals.get(id);
-        if (!record) return res.status(404).json({ error: 'Approval request not found' });
-        record.status = approved ? 'approved' : 'rejected';
-        resolveApproval(id, approved);
-        res.json({ id, status: record.status });
-    } catch (error: unknown) {
-        next(error);
+  try {
+    const { id } = req.params;
+    const { approved } = req.body;
+    if (typeof approved !== 'boolean') {
+      return res.status(400).json({ error: 'approved debe ser booleano' });
     }
+    const record = commitApprovals.get(id);
+    if (!record) return res.status(404).json({ error: 'Approval request not found' });
+    record.status = approved ? 'approved' : 'rejected';
+    resolveApproval(id, approved);
+    res.json({ id, status: record.status });
+  } catch (error: unknown) {
+    next(error);
+  }
 });
 
 app.get('/api/hooks/commit-approval/:id', (req, res, next) => {
-    try {
-        const { id } = req.params;
-        const record = commitApprovals.get(id);
-        if (!record) return res.status(404).json({ error: 'Approval request not found' });
-        res.json({ id, ...record });
-    } catch (error: unknown) {
-        next(error);
-    }
+  try {
+    const { id } = req.params;
+    const record = commitApprovals.get(id);
+    if (!record) return res.status(404).json({ error: 'Approval request not found' });
+    res.json({ id, ...record });
+  } catch (error: unknown) {
+    next(error);
+  }
 });
 
 // Centralized error handler
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[ERROR] ${req.method} ${req.path}: ${message}`);
-    if (!res.headersSent) res.status(500).json({ error: message });
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[ERROR] ${req.method} ${req.path}: ${message}`);
+  if (!res.headersSent) res.status(500).json({ error: message });
 });
 
 const server = app.listen(config.server.port, config.server.host, () => {
-    console.log(`Huascar Backend corriendo en http://${config.server.host}:${config.server.port}`);
+  console.log(`Huascar Backend corriendo en http://${config.server.host}:${config.server.port}`);
 });
 
 process.on('uncaughtException', (err) => {
-    console.error(`[FATAL] Excepcion no capturada: ${err.message}`, err.stack?.split('\n').slice(0, 3).join('\n'));
-    store.close();
-    server.close(() => process.exit(1));
+  console.error(`[FATAL] Excepcion no capturada: ${err.message}`, err.stack?.split('\n').slice(0, 3).join('\n'));
+  store.close();
+  server.close(() => process.exit(1));
 });
 process.on('unhandledRejection', (reason) => {
-    console.error(`[FATAL] Promesa rechazada no capturada: ${reason}`);
-    store.close();
-    server.close(() => process.exit(1));
+  console.error(`[FATAL] Promesa rechazada no capturada: ${reason}`);
+  store.close();
+  server.close(() => process.exit(1));
 });
 process.on('SIGTERM', () => {
-    console.log('SIGTERM recibido, cerrando conexiones...');
-    store.close();
-    server.close(() => process.exit(0));
+  console.log('SIGTERM recibido, cerrando conexiones...');
+  store.close();
+  server.close(() => process.exit(0));
 });
 process.on('SIGINT', () => {
-    console.log('SIGINT recibido, cerrando conexiones...');
-    store.close();
-    server.close(() => process.exit(0));
+  console.log('SIGINT recibido, cerrando conexiones...');
+  store.close();
+  server.close(() => process.exit(0));
 });

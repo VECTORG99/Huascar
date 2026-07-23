@@ -2,6 +2,9 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import { Store } from '../src/engine/Store.js';
+import { MigrationRunner } from '../src/engine/Migrations.js';
+import migration001 from '../src/engine/migrations/001_create_executions.js';
+import migration002 from '../src/engine/migrations/002_create_rag_documents.js';
 
 const TEST_DB = '/tmp/huascar_test_unit.db';
 
@@ -10,7 +13,10 @@ describe('Store', () => {
 
   before(() => {
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
-    store = new Store(TEST_DB);
+    const runner = new MigrationRunner();
+    runner.register(migration001);
+    runner.register(migration002);
+    store = new Store(TEST_DB, runner);
   });
 
   after(() => {
