@@ -126,11 +126,13 @@ export function SpaceSimulation() {
 
     // Black hole well anchored near the very top of the viewport. Sized to
     // dominate the frame like a real horizon-scale render rather than a
-    // small decorative icon. It never moves — no scroll offset is ever
-    // applied to `well`.
+    // Black hole well anchored dead-center on screen. Sized to dominate
+    // the frame like a real horizon-scale render rather than a small
+    // decorative icon. It never moves — no scroll offset is ever applied
+    // to `well`.
     const well: GravityWell = {
-      x: width * 0.24,
-      y: height * 0.16,
+      x: width * 0.5,
+      y: height * 0.5,
       eventRadius: Math.min(width, height) * 0.16,
       photonRadius: Math.min(width, height) * 0.205,
       influenceRadius: Math.min(width, height) * 0.75,
@@ -149,6 +151,8 @@ export function SpaceSimulation() {
 
     const STAR_PARALLAX = 0.18;
     const METEOR_PARALLAX = 0.35;
+    let lastScrollY = 0;
+    let scrollVelocity = 0;
 
     const stars: Star[] = Array.from({ length: STAR_COUNT }, () =>
       createStar(width, height)
@@ -163,6 +167,15 @@ export function SpaceSimulation() {
       // Stars drift downward with a fraction of scroll (parallax), wrapping
       // around infinitely in Y so the field never runs out while scrolling.
       const starOffset = scrollY * STAR_PARALLAX;
+      // Light consumption is driven by active scroll *motion*, not by
+      // scroll position: it spikes while the user is scrolling (up or
+      // down, transitioning between phases) and decays back to 0 quickly
+      // once the scroll settles, restoring the calm baseline canvas.
+      const rawScrollDelta = Math.abs(scrollY - lastScrollY);
+      lastScrollY = scrollY;
+      scrollVelocity = Math.max(rawScrollDelta, scrollVelocity * 0.9);
+      const lightConsumption = clampOpacity(scrollVelocity / 40);
+
       for (const star of stars) {
         star.twinklePhase += star.twinkleSpeed * 16;
         const twinkle = Math.sin(star.twinklePhase);
@@ -180,26 +193,71 @@ export function SpaceSimulation() {
         if (!lensed.visible) continue;
 
         const r = baseR * (1 + lensed.tangentialStretch * 0.8);
-        const op = baseOp * lensed.brightness;
+        const nearRing = Math.min(1, lensed.tangentialStretch);
+        // Ambient stars that blend faintly into the background dim further
+        // while light is being actively consumed by scroll motion.
+        const ambientDamp = 1 - lightConsumption * 0.55 * (1 - nearRing);
+        const op = baseOp * lensed.brightness * ambientDamp;
 
-        ctx.beginPath();
-        if (lensed.tangentialStretch > 0.3) {
-          // Draw as arc/streak when heavily lensed
+        // How much this star has dissolved into the ring: only engages
+        // near the photon band, and only while actively scrolling.
+        const dissolve = nearRing * lightConsumption;
+
+        if (dissolve > 0.05) {
+          // Merge into the black hole: draw a curved arc that follows the
+          // same circular geometry as the photon ring (not a straight line
+          // toward the center) — as the star dissolves, the arc's radius
+          // eases toward the ring's radius and its angular length grows,
+          // so it reads as the star's light being smeared along the
+          // horizon's curve and becoming one with the ring.
           const angle = Math.atan2(lensed.y - well.y, lensed.x - well.x);
-          ctx.ellipse(
-            lensed.x,
-            lensed.y,
-            r * (1 + lensed.tangentialStretch),
-            r * 0.5,
-            angle + Math.PI / 2,
-            0,
-            Math.PI * 2
-          );
+          const starDistance = Math.hypot(lensed.x - well.x, lensed.y - well.y);
+          const arcRadius =
+            starDistance + (well.photonRadius - starDistance) * dissolve;
+          const arcHalfSpan = 0.05 + dissolve * 0.5; // radians, grows as it merges
+          const arcSegments = 16;
+          const lineOpBase = op * (0.5 + dissolve * 1.1);
+          ctx.lineCap = "butt";
+
+          for (let seg = 0; seg < arcSegments; seg++) {
+            const t0 = seg / arcSegments;
+            const t1 = (seg + 1) / arcSegments;
+            // Centered on the star's angle, sweeping symmetrically.
+            const a0 = angle + (t0 - 0.5) * 2 * arcHalfSpan;
+            const a1 = angle + (t1 - 0.5) * 2 * arcHalfSpan;
+            const sx = well.x + Math.cos(a0) * arcRadius;
+            const sy = well.y + Math.sin(a0) * arcRadius;
+            const ex = well.x + Math.cos(a1) * arcRadius;
+            const ey = well.y + Math.sin(a1) * arcRadius;
+            // Brightest at the star's own angle (t=0.5), fading toward the
+            // tips of the arc so it blends smoothly into the ring.
+            const edgeFade = 1 - Math.abs(t0 - 0.5) * 2;
+            const segOpacity = lineOpBase * edgeFade * dissolve;
+            if (segOpacity < 0.02) continue;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${clampOpacity(segOpacity)})`;
+            ctx.lineWidth = Math.max(0.5, r * 0.5 * (0.5 + dissolve * 0.5));
+            ctx.stroke();
+          }
+
+          // The star point itself shrinks and fades as it merges into the
+          // arc, then grows back to full size as it exits (dissolve → 0).
+          const pointOpacity = op * (1 - dissolve);
+          const pointRadius = r * (1 - dissolve * 0.85);
+          if (pointOpacity > 0.02 && pointRadius > 0.15) {
+            ctx.beginPath();
+            ctx.arc(lensed.x, lensed.y, pointRadius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${pointOpacity})`;
+            ctx.fill();
+          }
         } else {
+          ctx.beginPath();
           ctx.arc(lensed.x, lensed.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 255, 255, ${op})`;
+          ctx.fill();
         }
-        ctx.fillStyle = `rgba(255, 255, 255, ${op})`;
-        ctx.fill();
 
         // Glow for bright moments
         if (twinkle > 0.6 || lensed.brightness > 1.3) {

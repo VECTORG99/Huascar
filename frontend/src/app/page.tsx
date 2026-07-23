@@ -11,14 +11,6 @@ const SpaceSimulation = dynamic(
   { ssr: false }
 );
 
-const Spaceship = dynamic(
-  () =>
-    import("@/features/landing/components/spaceship").then(
-      (m) => m.Spaceship
-    ),
-  { ssr: false }
-);
-
 const StickyHeader = dynamic(
   () =>
     import("@/features/landing/components/sticky-nav").then(
@@ -38,9 +30,6 @@ const StickyFooter = dynamic(
 export default function HomePage() {
   return (
     <>
-      {/* Ship (fixed center, behind content) */}
-      <Spaceship />
-
       {/* Navigation */}
       <StickyHeader />
       <StickyFooter />

@@ -64,9 +64,11 @@ export function sampleDisk(
     const approach = Math.cos(orbitAngle);
     const doppler = approach;
 
-    // Relativistic-style beaming: approaching material is strongly
-    // brightened and blue-hot, receding material is dim and cool.
-    const beaming = Math.pow(1 + doppler * 0.9, 3.2) * 0.35;
+    // Relativistic-style beaming: approaching material is brightened and
+    // blue-hot, receding material is dimmer and cooler — but kept clearly
+    // visible on both sides so the disk reads as a full ring, not a
+    // one-sided arc.
+    const beaming = Math.pow(1 + doppler * 0.55, 1.8) * 0.45;
     // Gravitational redshift/limb effect: material behind the hole (far
     // edge, smaller |sin|) dims slightly from path length through glow.
     const limb = 0.55 + 0.45 * Math.abs(Math.sin(orbitAngle));
@@ -159,7 +161,7 @@ export function lensPoint(point: Point, well: GravityWell): LensedPoint {
 
   const angle = Math.atan2(dy, dx);
   const influence = 1 - distance / well.influenceRadius;
-  const ringWidth = Math.max(1, well.photonRadius * 0.22);
+  const ringWidth = Math.max(1, well.photonRadius * 0.16);
   const ringDistance = (distance - well.photonRadius) / ringWidth;
   const photonBand = Math.exp(-(ringDistance * ringDistance));
   const horizonFade = clamp(
@@ -169,10 +171,13 @@ export function lensPoint(point: Point, well: GravityWell): LensedPoint {
     1,
   );
 
+  // Stronger, more jagged bending right at the photon sphere edge — light
+  // grazing the horizon gets whipped around harder instead of a smooth
+  // gentle curve, reading as raw gravitational distortion.
   const radialDisplacement =
-    well.photonRadius * (0.28 * photonBand + 0.06 * influence * influence);
+    well.photonRadius * (0.46 * photonBand + 0.08 * influence * influence);
   const angularDeflection =
-    influence * influence * 0.42 + photonBand * 0.22;
+    influence * influence * 0.42 + photonBand * 0.58;
   const lensedRadius = distance + radialDisplacement;
   const lensedAngle = angle + angularDeflection;
 
@@ -181,7 +186,7 @@ export function lensPoint(point: Point, well: GravityWell): LensedPoint {
     y: well.y + Math.sin(lensedAngle) * lensedRadius,
     visible: horizonFade > 0.02,
     brightness: horizonFade * (1 + photonBand * 1.8),
-    tangentialStretch: photonBand * 2.2,
+    tangentialStretch: photonBand * 3.4,
   };
 }
 
