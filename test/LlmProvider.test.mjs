@@ -42,4 +42,46 @@ describe('LlmProvider', () => {
     assert.deepStrictEqual(calls, ['first']);
   });
 
+  it('retries retryable errors before succeeding', async () => {
+    let calls = 0;
+    const models = [{ provider: 'openai', modelId: 'first', model: { id: 'first' } }];
+
+    const result = await generateTextWithFallback({ prompt: 'test' }, models, async () => {
+      calls++;
+      if (calls < 3) throw Object.assign(new Error('busy'), { status: 503 });
+      return { text: 'ok' };
+    }, undefined, { sleep: async () => {}, random: () => 0 });
+
+    assert.strictEqual(result.text, 'ok');
+    assert.strictEqual(calls, 3);
+  });
+
+  it('does not retry non-retryable 401 errors', async () => {
+    let calls = 0;
+    const models = [{ provider: 'openai', modelId: 'first', model: { id: 'first' } }];
+
+    await assert.rejects(
+      () => generateTextWithFallback({ prompt: 'test' }, models, async () => {
+        calls++;
+        throw Object.assign(new Error('unauthorized'), { status: 401 });
+      }, undefined, { sleep: async () => {} }),
+      /unauthorized/
+    );
+    assert.strictEqual(calls, 1);
+  });
+
+  it('respects Retry-After on retryable errors', async () => {
+    const delays = [];
+    let calls = 0;
+    const models = [{ provider: 'openai', modelId: 'first', model: { id: 'first' } }];
+
+    await generateTextWithFallback({ prompt: 'test' }, models, async () => {
+      calls++;
+      if (calls === 1) throw Object.assign(new Error('rate limited'), { status: 429, headers: { 'retry-after': '2' } });
+      return { text: 'ok' };
+    }, undefined, { sleep: async ms => delays.push(ms), random: () => 0 });
+
+    assert.deepStrictEqual(delays, [2000]);
+  });
+
 });
