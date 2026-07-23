@@ -23,13 +23,30 @@ function validateExecuteBody(body: Record<string, unknown>) {
     throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'session_id debe ser un texto de maximo 200 caracteres', 400);
   }
   if (mock_scenario !== undefined && (typeof mock_scenario !== 'string' || mock_scenario.length > 200)) {
-    throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'mock_scenario debe ser un texto de maximo 200 caracteres', 400);
+    throw new ApiError(
+      ErrorCodes.API_VALIDATION_ERROR,
+      'mock_scenario debe ser un texto de maximo 200 caracteres',
+      400,
+    );
   }
 
-  return { task, role, system_prompt: typeof system_prompt === 'string' ? system_prompt : undefined, agentConfig: agentConfig as AgentConfig | undefined, session_id, mock_scenario };
+  return {
+    task,
+    role,
+    system_prompt: typeof system_prompt === 'string' ? system_prompt : undefined,
+    agentConfig: agentConfig as AgentConfig | undefined,
+    session_id,
+    mock_scenario,
+  };
 }
 
-async function executeAgent(store: Store, Engine: EngineClass, body: Record<string, unknown>, onSession?: (sessionId: string) => void, signal?: AbortSignal) {
+async function executeAgent(
+  store: Store,
+  Engine: EngineClass,
+  body: Record<string, unknown>,
+  onSession?: (sessionId: string) => void,
+  signal?: AbortSignal,
+) {
   const { task, role, system_prompt, agentConfig, session_id, mock_scenario } = validateExecuteBody(body);
   const sessions = new SessionManager(store);
   const session = sessions.getOrCreate(session_id, role);
@@ -54,12 +71,24 @@ export function agentRouter(store: Store, Engine: EngineClass = HuascarEngine): 
     let activeSessionId: string | undefined;
     const controller = new AbortController();
     const { signal } = controller;
-    const onClose = () => { if (!signal.aborted) controller.abort('Client disconnected'); };
+    const onClose = () => {
+      if (!signal.aborted && req.socket.destroyed) controller.abort('Client disconnected');
+    };
     req.on('close', onClose);
-    const execTimeout = setTimeout(() => { if (!signal.aborted) controller.abort('Execution timeout'); }, config.server.requestTimeoutMs);
+    const execTimeout = setTimeout(() => {
+      if (!signal.aborted) controller.abort('Execution timeout');
+    }, config.server.requestTimeoutMs);
 
     try {
-      const result = await executeAgent(store, Engine, req.body, sessionId => { activeSessionId = sessionId; }, signal);
+      const result = await executeAgent(
+        store,
+        Engine,
+        req.body,
+        (sessionId) => {
+          activeSessionId = sessionId;
+        },
+        signal,
+      );
       if (!res.headersSent) res.json(result);
     } catch (error: unknown) {
       if (activeSessionId) {
@@ -80,34 +109,55 @@ export function agentRouter(store: Store, Engine: EngineClass = HuascarEngine): 
     let closed = false;
     const controller = new AbortController();
     const { signal } = controller;
-    const onDisconnect = () => { closed = true; if (!signal.aborted) controller.abort('Client disconnected'); };
-    req.on('close', onDisconnect);
-    res.on('close', () => { if (!res.writableEnded) onDisconnect(); });
-    const execTimeout = setTimeout(() => { if (!signal.aborted) controller.abort('Execution timeout'); }, config.server.requestTimeoutMs);
+    const onDisconnect = () => {
+      closed = true;
+      if (!signal.aborted) controller.abort('Client disconnected');
+    };
+    req.socket.on('close', () => {
+      if (req.socket.destroyed) onDisconnect();
+    });
+    res.on('close', () => {
+      if (!res.writableEnded) onDisconnect();
+    });
+    const execTimeout = setTimeout(() => {
+      if (!signal.aborted) controller.abort('Execution timeout');
+    }, config.server.requestTimeoutMs);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
 
-    const end = () => { if (!closed && !res.writableEnded && !res.destroyed) res.end(); };
+    const end = () => {
+      if (!closed && !res.writableEnded && !res.destroyed) res.end();
+    };
 
     try {
-      const result = await executeAgent(store, Engine, req.body, sessionId => {
-        writeSse(res, 'start', { session_id: sessionId }, () => closed);
-      }, signal);
+      const result = await executeAgent(
+        store,
+        Engine,
+        req.body,
+        (sessionId) => {
+          writeSse(res, 'start', { session_id: sessionId }, () => closed);
+        },
+        signal,
+      );
       writeSse(res, 'complete', result, () => closed);
       end();
     } catch (error: unknown) {
       if (signal.aborted) {
-        writeSse(res, 'error', { error: { code: 'EXECUTION_CANCELLED', message: String(signal.reason || 'timeout') } }, () => closed);
+        writeSse(
+          res,
+          'error',
+          { error: { code: 'EXECUTION_CANCELLED', message: String(signal.reason || 'timeout') } },
+          () => closed,
+        );
       } else {
         writeSse(res, 'error', { error: formatError(error) }, () => closed);
       }
       end();
     } finally {
       clearTimeout(execTimeout);
-      req.off('close', onDisconnect);
     }
   });
   return router;

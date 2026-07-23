@@ -28,20 +28,39 @@ async function stream(server, body) {
   return [...text.matchAll(/event: (\w+)\ndata: (.+)/g)].map(([, event, data]) => ({ event, data: JSON.parse(data) }));
 }
 
+class FakeEngine {
+  executeTask(task, _system, _config, context, mockScenario, _signal) {
+    this._prompts = this._prompts || [];
+    this._prompts.push({ task, context, mockScenario });
+    return Promise.resolve({ status: 'success', agent_role: 'role', response: `reply:${task}` });
+  }
+  async cancelAll() {}
+}
+
+function createApp(store, Engine = FakeEngine) {
+  const app = express().use(express.json()).use('/api', agentRouter(store, Engine)).use(errorHandler);
+  return http.createServer(app);
+}
+
+function tempDb(name) {
+  const db = `/tmp/huascar_agent_session_${name}_test.db`;
+  if (fs.existsSync(db)) fs.unlinkSync(db);
+  return db;
+}
+
 describe('agent sessions', () => {
   it('returns session_id and injects prior messages on next call', async () => {
-    const db = '/tmp/huascar_agent_session_test.db';
-    if (fs.existsSync(db)) fs.unlinkSync(db);
+    const db = tempDb('basic');
     const store = new Store(db);
     const prompts = [];
-    class FakeEngine {
-      executeTask(task, _system, _config, context, mockScenario) {
+    class TrackingEngine {
+      executeTask(task, _system, _config, context, mockScenario, _signal) {
         prompts.push({ task, context, mockScenario });
         return Promise.resolve({ status: 'success', agent_role: 'role', response: `reply:${task}` });
       }
+      async cancelAll() {}
     }
-    const app = express().use(express.json()).use('/api', agentRouter(store, FakeEngine)).use(errorHandler);
-    const server = http.createServer(app);
+    const server = createApp(store, TrackingEngine);
     try {
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
       const first = await post(server, { task: 'first', role: 'role', mock_scenario: 'multi_step' });
@@ -62,11 +81,9 @@ describe('agent sessions', () => {
   });
 
   it('returns 404 for missing or expired session', async () => {
-    const db = '/tmp/huascar_agent_session_missing_test.db';
-    if (fs.existsSync(db)) fs.unlinkSync(db);
+    const db = tempDb('missing');
     const store = new Store(db);
-    const app = express().use(express.json()).use('/api', agentRouter(store)).use(errorHandler);
-    const server = http.createServer(app);
+    const server = createApp(store);
     try {
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
       assert.strictEqual((await post(server, { task: 'x', role: 'role', session_id: 'missing' })).status, 404);
@@ -81,18 +98,17 @@ describe('agent sessions', () => {
   });
 
   it('rejects reusing a session with another role', async () => {
-    const db = '/tmp/huascar_agent_session_role_mismatch_test.db';
-    if (fs.existsSync(db)) fs.unlinkSync(db);
+    const db = tempDb('role_mismatch');
     const store = new Store(db);
     const prompts = [];
-    class FakeEngine {
-      executeTask(task, _system, _config, context) {
+    class TrackingEngine {
+      executeTask(task, _system, _config, context, _mockScenario, _signal) {
         prompts.push({ task, context });
         return Promise.resolve({ status: 'success', agent_role: 'role', response: `reply:${task}` });
       }
+      async cancelAll() {}
     }
-    const app = express().use(express.json()).use('/api', agentRouter(store, FakeEngine)).use(errorHandler);
-    const server = http.createServer(app);
+    const server = createApp(store, TrackingEngine);
     try {
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
       const first = await post(server, { task: 'first', role: 'role-a' });
@@ -109,16 +125,9 @@ describe('agent sessions', () => {
   });
 
   it('streams start then complete with session_id', async () => {
-    const db = '/tmp/huascar_agent_session_stream_test.db';
-    if (fs.existsSync(db)) fs.unlinkSync(db);
+    const db = tempDb('stream');
     const store = new Store(db);
-    class FakeEngine {
-      executeTask(task) {
-        return Promise.resolve({ status: 'success', agent_role: 'role', response: `reply:${task}` });
-      }
-    }
-    const app = express().use(express.json()).use('/api', agentRouter(store, FakeEngine)).use(errorHandler);
-    const server = http.createServer(app);
+    const server = createApp(store);
     try {
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
       const events = await stream(server, { task: 'first', role: 'role' });
@@ -134,11 +143,9 @@ describe('agent sessions', () => {
   });
 
   it('streams validation errors', async () => {
-    const db = '/tmp/huascar_agent_session_stream_error_test.db';
-    if (fs.existsSync(db)) fs.unlinkSync(db);
+    const db = tempDb('stream_error');
     const store = new Store(db);
-    const app = express().use(express.json()).use('/api', agentRouter(store)).use(errorHandler);
-    const server = http.createServer(app);
+    const server = createApp(store);
     try {
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
       const events = await stream(server, { task: 'first' });
