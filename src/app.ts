@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
 import { Store } from './engine/Store.js';
-import { creatorRouter } from './creator/router.js';
+import { creatorProtectedRouter, creatorPublicRouter } from './creator/router.js';
 import { requireAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
@@ -37,7 +37,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
 }));
 app.use(express.json({ limit: '128kb' }));
-app.use('/api/v1/creator', creatorRouter);
+app.use('/api/v1/creator', creatorPublicRouter);
 
 // ponytail: global request timeout. Per-endpoint overrides if needed later.
 app.use((req, res, next) => {
@@ -62,6 +62,7 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use('/api', historyRouter(store));
+app.use('/api/v1/creator', creatorProtectedRouter);
 app.use('/api', ragRouter(store));
 app.use('/api', rolesRouter());
 app.use('/api', agentsRouter(store));

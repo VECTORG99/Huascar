@@ -10,7 +10,8 @@ interface CreatorRequestBody {
   catalogVersion?: unknown;
 }
 
-export const creatorRouter = express.Router();
+export const creatorPublicRouter = express.Router();
+export const creatorProtectedRouter = express.Router();
 
 function parseBody(body: unknown): CreatorRequestBody {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
@@ -34,13 +35,16 @@ function assertVersions(body: CreatorRequestBody): void {
   }
 }
 
-creatorRouter.use((_req, res, next) => {
+function versionHeaders(_req: express.Request, res: express.Response, next: express.NextFunction) {
   res.set('X-Creator-Workflow-Version', WORKFLOW_VERSION);
   res.set('X-Creator-Catalog-Version', CATALOG_VERSION);
   next();
-});
+}
 
-creatorRouter.get('/catalog', (req, res) => {
+creatorPublicRouter.use(versionHeaders);
+creatorProtectedRouter.use(versionHeaders);
+
+creatorPublicRouter.get('/catalog', (req, res) => {
   const category = typeof req.query.category === 'string' ? req.query.category : undefined;
   const environment = typeof req.query.environment === 'string' ? req.query.environment : undefined;
   const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : undefined;
@@ -48,17 +52,17 @@ creatorRouter.get('/catalog', (req, res) => {
   res.json(getCreatorCatalog({ category, environment, q }));
 });
 
-creatorRouter.get('/workflow', (_req, res) => {
+creatorPublicRouter.get('/workflow', (_req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
   res.json(getWorkflowDefinition());
 });
 
-creatorRouter.get('/tutorial', (_req, res) => {
+creatorPublicRouter.get('/tutorial', (_req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
   res.json(creatorTutorial);
 });
 
-creatorRouter.post('/evaluate', (req, res, next) => {
+creatorProtectedRouter.post('/evaluate', (req, res, next) => {
   try {
     const body = parseBody(req.body);
     assertVersions(body);
@@ -78,5 +82,5 @@ function previewHandler(req: express.Request, res: express.Response, next: expre
   }
 }
 
-creatorRouter.post('/preview', previewHandler);
-creatorRouter.post('/generate', previewHandler);
+creatorProtectedRouter.post('/preview', previewHandler);
+creatorProtectedRouter.post('/generate', previewHandler);

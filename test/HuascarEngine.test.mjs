@@ -75,6 +75,22 @@ describe('HuascarEngine', () => {
     config.hasLlmProvider = previousHasLlmProvider;
   });
 
+  it('uses registered steering before file steering', async () => {
+    const engine = new HuascarEngine('PR_REVIEWER', {
+      readFile: () => JSON.stringify({
+        roles: { PR_REVIEWER: { name: 'File Reviewer', system_prompt: 'file prompt', temperature: 0.3 } },
+      }),
+      exists: () => false,
+      rag: { getContext: async () => '', loadSources: async () => {} },
+      mcpPool: { getConnections: async () => [] },
+      generateTextWithFallback: async ({ system }) => ({ text: system }),
+    });
+    const result = await engine.executeTask('test', undefined, { steering: { roles: { PR_REVIEWER: { system_prompt: 'registered prompt' } } } });
+
+    assert.strictEqual(result.status, 'success');
+    assert.strictEqual(engine.activeRole.system_prompt, 'registered prompt');
+  });
+
   it('uses injected dependencies instead of filesystem/API', async () => {
     const { config } = await import('../src/config.js');
     const previousMock = config.llm.mockMode;

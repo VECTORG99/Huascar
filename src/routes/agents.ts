@@ -52,17 +52,28 @@ function publicAgent(agent: AgentRecord, full = false) {
   return full ? { ...base, config: JSON.parse(agent.config) } : base;
 }
 
-function defaultRole(agent: AgentRecord, config: Record<string, unknown>) {
+function rolePrompt(role: Record<string, unknown>): string | undefined {
+  return typeof (role.prompt ?? role.system_prompt) === 'string' ? String(role.prompt ?? role.system_prompt) : undefined;
+}
+
+function configRoles(config: Record<string, unknown>): { role: string; system_prompt?: string }[] {
   const steering = config.steering && typeof config.steering === 'object' ? config.steering as { roles?: unknown } : undefined;
   const roles = steering?.roles;
   if (Array.isArray(roles) && roles[0] && typeof roles[0] === 'object') {
-    const role = roles[0] as Record<string, unknown>;
-    return { role: String(role.id ?? agent.id), system_prompt: typeof (role.prompt ?? role.system_prompt) === 'string' ? String(role.prompt ?? role.system_prompt) : undefined };
+    return roles.filter(role => role && typeof role === 'object').map(role => {
+      const r = role as Record<string, unknown>;
+      return { role: String(r.id), system_prompt: rolePrompt(r) };
+    });
   }
   if (roles && typeof roles === 'object') {
-    const [id, role] = Object.entries(roles as Record<string, Record<string, unknown>>)[0] ?? [];
-    return { role: id ?? agent.id, system_prompt: role && typeof (role.prompt ?? role.system_prompt) === 'string' ? String(role.prompt ?? role.system_prompt) : undefined };
+    return Object.entries(roles as Record<string, Record<string, unknown>>).map(([id, role]) => ({ role: id, system_prompt: rolePrompt(role) }));
   }
+  return [];
+}
+
+function defaultRole(agent: AgentRecord, config: Record<string, unknown>) {
+  const [role] = configRoles(config);
+  if (role) return role;
   return { role: agent.id, system_prompt: undefined };
 }
 
@@ -71,10 +82,13 @@ function executeBody(body: Record<string, unknown>, agent: AgentRecord) {
   const session_id = body.session_id;
   if (typeof task !== 'string' || !task || task.length > 10000) throw bad('task debe ser un texto de maximo 10000 caracteres');
   if (session_id !== undefined && (typeof session_id !== 'string' || session_id.length > 200)) throw bad('session_id debe ser un texto de maximo 200 caracteres');
+  if (body.system_prompt !== undefined) throw bad('system_prompt no puede sobrescribir el steering registrado');
   const config = validateConfig(JSON.parse(agent.config));
   const defaults = defaultRole(agent, config);
-  const role = typeof body.role === 'string' ? body.role : defaults.role;
-  const system_prompt = typeof body.system_prompt === 'string' ? body.system_prompt : defaults.system_prompt;
+  const roles = configRoles(config);
+  const selected = typeof body.role === 'string' ? roles.find(item => item.role === body.role) : defaults;
+  if (!selected) throw bad('role no existe en el steering registrado');
+  const { role, system_prompt } = selected;
   return { task, session_id, role, system_prompt, config };
 }
 
@@ -108,7 +122,7 @@ export function agentsRouter(store: Store, Engine: EngineClass = HuascarEngine):
       if (!agent) throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'agent no encontrado', 404);
       const { task, role, system_prompt, config, session_id } = executeBody(req.body, agent);
       const sessions = new SessionManager(store);
-      const session = sessions.getOrCreate(session_id, role);
+      const session = sessions.getOrCreate(session_id, `${agent.id}:${role}`);
       const sessionContext = sessions.recentContext(session.id);
       store.addSessionMessage(session.id, 'user', task);
       const result = await new Engine(role, store).executeTask(task, system_prompt, config, sessionContext);
