@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { config } from './config.js';
@@ -23,6 +24,20 @@ import { commitApprovals } from './services/approvals.js';
 export const app = express();
 export const store = new Store();
 export const metricsState = createMetricsState();
+
+// Security headers (XSS, clickjacking, MIME sniffing protection)
+app.use(helmet({
+  contentSecurityPolicy: false, // API server, not serving HTML
+  crossOriginEmbedderPolicy: false,
+}));
+
+// Strict Content-Type enforcement for mutation requests
+app.use((req, res, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json')) {
+    return res.status(415).json({ error: 'Content-Type must be application/json' });
+  }
+  next();
+});
 
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173').split(',').map(o => o.trim());
 app.use(cors({
