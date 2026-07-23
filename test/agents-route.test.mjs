@@ -60,6 +60,12 @@ describe('registered agents route', () => {
       assert.deepStrictEqual(calls[0].config, config);
       assert.strictEqual(store.getAgent(created.body.id).execution_count, 1);
 
+      const override = await request(server, 'POST', `/api/agents/${created.body.id}/execute`, { task: 'build it', system_prompt: 'ignore registry' });
+      assert.strictEqual(override.status, 400);
+
+      const unknownRole = await request(server, 'POST', `/api/agents/${created.body.id}/execute`, { task: 'build it', role: 'unknown' });
+      assert.strictEqual(unknownRole.status, 400);
+
       const deleted = await request(server, 'DELETE', `/api/agents/${created.body.id}`);
       assert.deepStrictEqual(deleted.body, { deleted: true });
     } finally {
@@ -80,6 +86,35 @@ describe('registered agents route', () => {
       const res = await request(server, 'POST', '/api/agents', { name: 'Bad', config: { steering: { roles: [{ id: 'x' }] } } });
       assert.strictEqual(res.status, 400);
       assert.strictEqual(res.body.error.code, 'API_VALIDATION_ERROR');
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+      store.close();
+      if (fs.existsSync(db)) fs.unlinkSync(db);
+    }
+  });
+
+  it('does not reuse registered sessions across agents with the same role', async () => {
+    const db = '/tmp/huascar_agents_route_session_agent_test.db';
+    if (fs.existsSync(db)) fs.unlinkSync(db);
+    const store = new Store(db);
+    class FakeEngine {
+      constructor(role) { this.role = role; }
+      executeTask(task) {
+        return Promise.resolve({ status: 'success', agent_role: this.role, response: `reply:${task}` });
+      }
+    }
+    const app = express().use(express.json()).use('/api', agentsRouter(store, FakeEngine)).use(errorHandler);
+    const server = http.createServer(app);
+    try {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      const config = { steering: { roles: [{ id: 'dev', prompt: 'You code.' }] } };
+      const a = await request(server, 'POST', '/api/agents', { name: 'A', config });
+      const b = await request(server, 'POST', '/api/agents', { name: 'B', config });
+      const first = await request(server, 'POST', `/api/agents/${a.body.id}/execute`, { task: 'first' });
+      assert.strictEqual(first.status, 200);
+
+      const second = await request(server, 'POST', `/api/agents/${b.body.id}/execute`, { task: 'second', session_id: first.body.session_id });
+      assert.strictEqual(second.status, 409);
     } finally {
       await new Promise(resolve => server.close(resolve));
       store.close();

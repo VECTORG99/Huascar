@@ -23,8 +23,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   const data = await res.json().catch(() => null);
   if (!res.ok) {
+    const error = data?.error;
+    const message = typeof error === "object" && error ? error.message : error;
     const issues = Array.isArray(data?.issues) ? ` ${data.issues.map((issue: { message?: string }) => issue.message).filter(Boolean).join(" ")}` : "";
-    throw new Error(`${data?.title || data?.error || data?.message || `Backend error ${res.status}`}${issues}`);
+    throw new Error(`${data?.title || message || data?.message || `Backend error ${res.status}`}${issues}`);
   }
   return data as T;
 }

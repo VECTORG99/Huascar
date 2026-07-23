@@ -23,11 +23,14 @@ function buildRegistryConfig(bundle: GeneratedAgentBundle, answers: CreatorAnswe
   const steering = parseJsonArtifact<AgentConfig["steering"]>(bundle, "huascar/steering.json");
   const rag = parseJsonArtifact<{ knowledge_bases?: unknown[] }>(bundle, "huascar/rag.json");
   const mcps = parseJsonArtifact<Record<string, unknown>>(bundle, "huascar/mcps.json");
+  const mcpNames = mcps ? Object.keys(mcps.mcpServers && typeof mcps.mcpServers === "object" ? mcps.mcpServers : mcps) : [];
   const prompt = typeof answers.objective === "string" ? answers.objective : "Agente generado desde Creator.";
   return {
     steering: steering ?? { roles: { GENERATED_AGENT: { system_prompt: prompt } } },
+    ...(rag?.knowledge_bases ? { knowledge: rag.knowledge_bases } : {}),
+    ...(mcpNames.length ? { tools: mcpNames } : {}),
     ...(rag ? { rag: { sources: rag.knowledge_bases ?? [] } } : {}),
-    ...(mcps ? { mcps: Object.keys(mcps.mcpServers && typeof mcps.mcpServers === "object" ? mcps.mcpServers : mcps) } : {})
+    ...(mcps ? { mcps: mcpNames } : {})
   };
 }
 

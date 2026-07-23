@@ -34,6 +34,19 @@ interface SteeringConfig {
   roles: Record<string, SteeringRole>;
 }
 
+function registeredSteeringRole(steering: unknown, roleKey: string): SteeringRole | null {
+  if (!steering || typeof steering !== 'object') return null;
+  const roles = (steering as { roles?: unknown }).roles;
+  const role = Array.isArray(roles)
+    ? roles.find(item => item && typeof item === 'object' && (item as Record<string, unknown>).id === roleKey)
+    : roles && typeof roles === 'object' ? (roles as Record<string, unknown>)[roleKey] : null;
+  if (!role || typeof role !== 'object') return null;
+  const r = role as Record<string, unknown>;
+  const system_prompt = r.prompt ?? r.system_prompt;
+  if (typeof system_prompt !== 'string') return null;
+  return { name: typeof r.name === 'string' ? r.name : roleKey, system_prompt, temperature: typeof r.temperature === 'number' ? r.temperature : 0.3 };
+}
+
 type AgentHooks = typeof agentHooks;
 
 export interface HuascarEngineDeps {
@@ -151,7 +164,10 @@ export class HuascarEngine {
   }
 
   async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '') {
-    if (!this.steering.roles[this.roleKey]) {
+    const registeredRole = registeredSteeringRole(agentConfig?.steering, this.roleKey);
+    if (registeredRole) {
+      this.activeRole = registeredRole;
+    } else if (!this.steering.roles[this.roleKey]) {
       if (systemPrompt) {
         this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
       } else {
