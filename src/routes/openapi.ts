@@ -55,6 +55,18 @@ export const openApiSpec = {
         responses: { '200': { description: 'SSE events: start, complete, error', content: { 'text/event-stream': { schema: { type: 'string' } } } }, '400': { description: 'Invalid task or role' } },
       },
     },
+    '/api/agents': {
+      get: { summary: 'List registered agents', responses: { '200': { description: 'Registered agent summaries', content: { 'application/json': { schema: json } } } } },
+      post: { summary: 'Create registered agent', requestBody: { required: true, content: { 'application/json': { schema: json } } }, responses: { '201': { description: 'Registered agent', content: { 'application/json': { schema: json } } }, '400': { description: 'Invalid agent config' } } },
+    },
+    '/api/agents/{id}': {
+      get: { summary: 'Get registered agent', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Registered agent', content: { 'application/json': { schema: json } } }, '404': { description: 'Agent not found' } } },
+      put: { summary: 'Update registered agent', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: json } } }, responses: { '200': { description: 'Registered agent', content: { 'application/json': { schema: json } } }, '400': { description: 'Invalid agent config' }, '404': { description: 'Agent not found' } } },
+      delete: { summary: 'Delete registered agent', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { '200': { description: 'Deletion result', content: { 'application/json': { schema: json } } } } },
+    },
+    '/api/agents/{id}/execute': {
+      post: { summary: 'Execute a registered agent', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: json } } }, responses: { '200': { description: 'Agent execution result', content: { 'application/json': { schema: json } } }, '400': { description: 'Invalid execution payload' }, '404': { description: 'Agent not found' } } },
+    },
     '/api/hooks/commit-approval': {
       post: {
         summary: 'Create a commit approval request',

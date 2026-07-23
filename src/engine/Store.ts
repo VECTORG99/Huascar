@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { ErrorCodes, StoreError } from '../errors.js';
 import { MigrationRunner } from './Migrations.js';
@@ -48,6 +49,16 @@ export interface SessionMessageRecord {
   created_at: number;
 }
 
+export interface AgentRecord {
+  id: string;
+  name: string;
+  config: string;
+  created_at: number;
+  updated_at: number;
+  last_executed_at: number | null;
+  execution_count: number;
+}
+
 export class Store {
   private db: Database.Database;
   private dbPath: string;
@@ -82,6 +93,39 @@ export class Store {
       'SELECT * FROM executions ORDER BY created_at DESC LIMIT ?'
     );
     return stmt.all(limit) as ExecutionRecord[];
+  }
+
+  // --- Registered agents ---
+
+  createAgent(name: string, agentConfig: unknown, now = Date.now()): AgentRecord {
+    const agent = { id: randomUUID(), name, config: JSON.stringify(agentConfig), created_at: now, updated_at: now, last_executed_at: null, execution_count: 0 };
+    this.db.prepare(`
+      INSERT INTO agents (id, name, config, created_at, updated_at, last_executed_at, execution_count)
+      VALUES (@id, @name, @config, @created_at, @updated_at, @last_executed_at, @execution_count)
+    `).run(agent);
+    return agent;
+  }
+
+  listAgents(): AgentRecord[] {
+    return this.db.prepare('SELECT * FROM agents ORDER BY updated_at DESC, name ASC').all() as AgentRecord[];
+  }
+
+  getAgent(id: string): AgentRecord | null {
+    return (this.db.prepare('SELECT * FROM agents WHERE id = ?').get(id) as AgentRecord | undefined) ?? null;
+  }
+
+  updateAgent(id: string, name: string, agentConfig: unknown, now = Date.now()): AgentRecord | null {
+    this.db.prepare('UPDATE agents SET name = ?, config = ?, updated_at = ? WHERE id = ?').run(name, JSON.stringify(agentConfig), now, id);
+    return this.getAgent(id);
+  }
+
+  deleteAgent(id: string): boolean {
+    return this.db.prepare('DELETE FROM agents WHERE id = ?').run(id).changes > 0;
+  }
+
+  recordAgentExecution(id: string, now = Date.now()): AgentRecord | null {
+    this.db.prepare('UPDATE agents SET last_executed_at = ?, execution_count = execution_count + 1 WHERE id = ?').run(now, id);
+    return this.getAgent(id);
   }
 
   // --- Agent sessions ---

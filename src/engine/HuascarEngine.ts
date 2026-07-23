@@ -17,6 +17,7 @@ interface RagConfig {
 export interface AgentConfig {
   tools?: string[];
   knowledge?: RagSource[];
+  steering?: unknown;
   security?: {
     block_destructive_commands?: boolean;
     require_commit_approval?: boolean;
