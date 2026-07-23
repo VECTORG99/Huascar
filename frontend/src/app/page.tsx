@@ -51,6 +51,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("terminal");
   const logEndRef = useRef<HTMLDivElement>(null);
+  const lastSessionKey = useRef(`${role}:${JSON.stringify(agentConfig)}`);
 
   // History state
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -60,6 +61,12 @@ export default function Home() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
+
+  useEffect(() => {
+    const key = `${role}:${JSON.stringify(agentConfig)}`;
+    if (lastSessionKey.current !== key) setSessionId(null);
+    lastSessionKey.current = key;
+  }, [role, agentConfig]);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -136,7 +143,7 @@ export default function Home() {
         body: JSON.stringify(body)
       });
 
-      if (!res.body) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();

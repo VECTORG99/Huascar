@@ -83,9 +83,11 @@ describe('Store', () => {
   it('touches and deletes expired sessions', () => {
     store.createSession('old-session', 'role', 1);
     store.touchSession('old-session', 2);
+    store.addSessionMessage('old-session', 'user', 'orphan', 3);
     assert.strictEqual(store.getSession('old-session').last_active_at, 2);
     assert.strictEqual(store.deleteExpiredSessions(10, 13), 1);
     assert.strictEqual(store.getSession('old-session'), null);
+    assert.deepStrictEqual(store.listSessionMessages('old-session'), []);
   });
 
   it('lists and deletes RAG sources', () => {

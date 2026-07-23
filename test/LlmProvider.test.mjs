@@ -84,4 +84,18 @@ describe('LlmProvider', () => {
     assert.deepStrictEqual(delays, [2000]);
   });
 
+  it('caps excessive Retry-After delays', async () => {
+    const delays = [];
+    let calls = 0;
+    const models = [{ provider: 'openai', modelId: 'first', model: { id: 'first' } }];
+
+    await generateTextWithFallback({ prompt: 'test' }, models, async () => {
+      calls++;
+      if (calls === 1) throw Object.assign(new Error('rate limited'), { status: 429, headers: { 'retry-after': '999' } });
+      return { text: 'ok' };
+    }, undefined, { maxDelayMs: 3000, sleep: async ms => delays.push(ms), random: () => 0 });
+
+    assert.deepStrictEqual(delays, [3000]);
+  });
+
 });

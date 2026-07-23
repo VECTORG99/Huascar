@@ -116,7 +116,11 @@ export class Store {
   }
 
   deleteExpiredSessions(ttlMs = config.sessions.ttlMs, now = Date.now()): number {
-    return this.db.prepare('DELETE FROM sessions WHERE last_active_at < ?').run(now - ttlMs).changes;
+    return this.db.transaction((expiresBefore: number) => {
+      this.db.prepare('DELETE FROM session_messages WHERE session_id IN (SELECT id FROM sessions WHERE last_active_at < ?)')
+        .run(expiresBefore);
+      return this.db.prepare('DELETE FROM sessions WHERE last_active_at < ?').run(expiresBefore).changes;
+    })(now - ttlMs) as number;
   }
 
   // --- Vector RAG ---

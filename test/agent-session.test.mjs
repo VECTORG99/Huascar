@@ -79,6 +79,34 @@ describe('agent sessions', () => {
     }
   });
 
+  it('rejects reusing a session with another role', async () => {
+    const db = '/tmp/huascar_agent_session_role_mismatch_test.db';
+    if (fs.existsSync(db)) fs.unlinkSync(db);
+    const store = new Store(db);
+    const prompts = [];
+    class FakeEngine {
+      executeTask(task, _system, _config, context) {
+        prompts.push({ task, context });
+        return Promise.resolve({ status: 'success', agent_role: 'role', response: `reply:${task}` });
+      }
+    }
+    const app = express().use(express.json()).use('/api', agentRouter(store, FakeEngine)).use(errorHandler);
+    const server = http.createServer(app);
+    try {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      const first = await post(server, { task: 'first', role: 'role-a' });
+      assert.strictEqual(first.status, 200);
+
+      const second = await post(server, { task: 'second', role: 'role-b', session_id: first.body.session_id });
+      assert.strictEqual(second.status, 409);
+      assert.strictEqual(prompts.length, 1);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+      store.close();
+      if (fs.existsSync(db)) fs.unlinkSync(db);
+    }
+  });
+
   it('streams start then complete with session_id', async () => {
     const db = '/tmp/huascar_agent_session_stream_test.db';
     if (fs.existsSync(db)) fs.unlinkSync(db);
