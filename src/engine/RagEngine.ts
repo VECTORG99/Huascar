@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { URL } from 'url';
 import { config } from '../config.js';
 import { Store } from './Store.js';
+import { VectorIndex } from './VectorIndex.js';
 import { logger } from '../logger.js';
 import { ErrorCodes, RagError } from '../errors.js';
 
@@ -41,18 +42,6 @@ function isPathSafe(target: string): boolean {
   return resolved === PROJECT_ROOT || resolved.startsWith(PROJECT_ROOT + path.sep);
 }
 
-/** Cosine similarity between two equal-length vectors. */
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
-}
-
 /** Call OpenAI embedding API directly via fetch. Batching supported. */
 async function getEmbeddings(inputs: string[], model: string): Promise<number[][]> {
   const res = await fetch('https://api.openai.com/v1/embeddings', {
@@ -79,6 +68,8 @@ export class RagEngine {
   private maxContentChars: number;
   private encoding: BufferEncoding;
   private store: Store | null;
+  private vectorIndex: VectorIndex | null = null;
+  private vectorIndexChunkCount = -1;
 
   constructor(options?: { maxContentChars?: number; encoding?: BufferEncoding; store?: Store }) {
     this.maxContentChars = options?.maxContentChars ?? config.rag.maxContentChars;
@@ -204,6 +195,8 @@ export class RagEngine {
     }
 
     this.store.deleteChunksBySource(source);
+    this.vectorIndex = null;
+    this.vectorIndexChunkCount = -1;
     const chunks = this.splitIntoChunks(content);
 
     let hasEmbeddings = false;
@@ -346,16 +339,14 @@ export class RagEngine {
       return [];
     }
 
-    const chunks = this.store.getAllChunks().filter(c => c.embedding);
-    const scored = chunks
-      .map(c => ({
-        text: c.chunk_text,
-        score: cosineSimilarity(queryVec, c.embedding!),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, config.rag.topK);
+    const count = this.store.getChunksCount();
+    if (!this.vectorIndex || this.vectorIndexChunkCount !== count) {
+      const chunks = this.store.getAllChunks().filter(c => c.embedding);
+      this.vectorIndex = new VectorIndex(chunks);
+      this.vectorIndexChunkCount = count;
+    }
 
-    return scored;
+    return this.vectorIndex.search(queryVec, config.rag.topK);
   }
 
   /**
