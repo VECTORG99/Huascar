@@ -25,6 +25,13 @@ export interface DocumentChunk {
   created_at: string;
 }
 
+export interface RagSourceSummary {
+  source: string;
+  chunk_count: number;
+  content_hash: string | null;
+  chunk_hashes: string[];
+}
+
 export class Store {
   private db: Database.Database;
   private dbPath: string;
@@ -79,6 +86,19 @@ export class Store {
   deleteChunksBySource(source: string): void {
     const stmt = this.db.prepare('DELETE FROM rag_documents WHERE source = ?');
     stmt.run(source);
+  }
+
+  getRagSources(): RagSourceSummary[] {
+    const rows = this.db.prepare(`
+      SELECT source, COUNT(*) as chunk_count, MAX(content_hash) as content_hash, GROUP_CONCAT(chunk_hash) as chunk_hashes
+      FROM rag_documents
+      GROUP BY source
+      ORDER BY source
+    `).all() as { source: string; chunk_count: number; content_hash: string | null; chunk_hashes: string | null }[];
+    return rows.map(r => ({
+      ...r,
+      chunk_hashes: r.chunk_hashes ? r.chunk_hashes.split(',').filter(Boolean) : [],
+    }));
   }
 
   getAllChunks(): DocumentChunk[] {

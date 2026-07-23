@@ -119,6 +119,39 @@ describe('RagEngine', () => {
     }
   });
 
+  it('deduplicates chunks by hash before saving a source', async () => {
+    const dbPath = '/tmp/huascar_rag_dedup_unit.db';
+    cleanupDb(dbPath);
+    const store = new Store(dbPath);
+    const originalHasKey = config.hasEmbeddingApiKey;
+    const originalChunkSize = config.rag.chunkSize;
+    const originalOverlap = config.rag.chunkOverlapChars;
+    const originalFetch = globalThis.fetch;
+
+    config.hasEmbeddingApiKey = true;
+    config.rag.chunkSize = 20;
+    config.rag.chunkOverlapChars = 0;
+    globalThis.fetch = async (url, init) => ({
+      ok: true,
+      json: async () => ({ data: JSON.parse(init.body).input.map((_, index) => ({ index, embedding: [index, 0] })) }),
+    });
+
+    try {
+      const engine = new RagEngine({ store });
+      await engine.loadSources([{ type: 'inline', content: 'Repeat sentence.\n\nOther sentence.\n\nRepeat sentence.' }]);
+
+      assert.strictEqual(store.getChunksCount(), 2);
+      assert.deepStrictEqual(store.getAllChunks().map(chunk => chunk.chunk_text), ['Repeat sentence.', 'Other sentence.']);
+    } finally {
+      config.hasEmbeddingApiKey = originalHasKey;
+      config.rag.chunkSize = originalChunkSize;
+      config.rag.chunkOverlapChars = originalOverlap;
+      globalThis.fetch = originalFetch;
+      store.close();
+      cleanupDb(dbPath);
+    }
+  });
+
   it('splits long text at sentence boundaries when possible', () => {
     const originalChunkSize = config.rag.chunkSize;
     const originalOverlap = config.rag.chunkOverlapChars;
