@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["knowledge_bases"],
+  "additionalProperties": false,
+  "properties": {
+    "knowledge_bases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "path"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string" },
+          "path": { "type": "string" }
+        }
+      }
+    }
+  }
+}

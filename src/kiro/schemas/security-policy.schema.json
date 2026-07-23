@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["blocked_tool_patterns", "blocked_args_substrings"],
+  "additionalProperties": false,
+  "properties": {
+    "blocked_tool_patterns": { "type": "array", "items": { "type": "string" } },
+    "blocked_args_substrings": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "allowed_tools": { "type": "array", "items": { "type": "string" } }
+  }
+}
