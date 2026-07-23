@@ -171,7 +171,12 @@ export class HuascarEngine {
     this.mcpClients = [];
   }
 
-  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '', mockScenario?: string) {
+  async cancelAll(): Promise<void> {
+    logger.warn('[HuascarEngine] Cancelling all MCP connections...');
+    await this.disconnectMcpServers();
+  }
+
+  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '', mockScenario?: string, signal?: AbortSignal) {
     const registeredRole = registeredSteeringRole(agentConfig?.steering, this.roleKey);
     const steeringRole = this.steering.roles[this.roleKey];
     if (registeredRole) {
@@ -242,7 +247,7 @@ export class HuascarEngine {
       const effectiveSystemPrompt = baseSystemPrompt + (ragContext ? '\n\n' + ragContext : '');
 
       const responseText = !useMock
-        ? await this.runReActLoop(effectiveSystemPrompt, effectiveTask)
+        ? await this.runReActLoop(effectiveSystemPrompt, effectiveTask, signal)
         : await this.runMockReActLoop(effectiveTask, mockScenario);
 
       if (this.store) {
@@ -263,7 +268,8 @@ export class HuascarEngine {
   }
 
 
-  private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
+  private async runReActLoop(systemPrompt: string, task: string, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) throw new Error(`Execution cancelled: ${signal.reason || 'aborted'}`);
     let toolExecuted = false;
     const { text } = await this.deps.generateTextWithFallback({
       system: systemPrompt,
@@ -272,6 +278,7 @@ export class HuascarEngine {
       stopWhen: isStepCount(config.react.maxIterations),
     }, undefined, undefined, () => !toolExecuted);
 
+    if (signal?.aborted) throw new Error(`Execution cancelled: ${signal.reason || 'aborted'}`);
     logger.info(`[HuascarEngine] Respuesta LLM:\n${text}`);
     return text;
   }
