@@ -7,6 +7,7 @@ interface ExecutionResponse {
   agent_role: string;
   response: string;
   error?: string;
+  session_id?: string;
 }
 
 interface HistoryRecord {
@@ -46,6 +47,7 @@ export default function Home() {
     "[HuascarEngine] Esperando instrucciones..."
   ]);
   const [jsonResponse, setJsonResponse] = useState<ExecutionResponse | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("terminal");
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -121,19 +123,46 @@ export default function Home() {
 
     try {
       const body: Record<string, unknown> = { task, role };
+      if (sessionId) body.session_id = sessionId;
       if (agentConfig) {
         body.config = agentConfig;
         // Transform Agent Creator format to backend format if needed
         if (agentConfig.steering?.system_prompt) body.system_prompt = agentConfig.steering.system_prompt;
       }
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://huascar.onrender.com';
-      const res = await fetch(`${apiUrl}/api/agent/execute`, {
+      const res = await fetch(`${apiUrl}/api/agent/execute/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
 
-      const data: ExecutionResponse = await res.json();
+      if (!res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let data: ExecutionResponse | null = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || "";
+        for (const chunk of chunks) {
+          const event = chunk.match(/^event: (.+)$/m)?.[1];
+          const raw = chunk.match(/^data: (.+)$/m)?.[1];
+          if (!event || !raw) continue;
+          const payload = JSON.parse(raw);
+          if (event === "start") {
+            setSessionId(payload.session_id);
+            setLogs(prev => [...prev, `[HuascarEngine] Sesión iniciada: ${payload.session_id}`]);
+          }
+          if (event === "complete") data = payload;
+          if (event === "error") throw new Error(payload.error?.message || "stream error");
+        }
+      }
+      if (!data) throw new Error("stream ended without result");
+      setSessionId(data.session_id || null);
       const msg = data.status === "success"
         ? "[HuascarEngine] Ejecución completada."
         : "[HuascarEngine] Ejecución bloqueada por hook.";

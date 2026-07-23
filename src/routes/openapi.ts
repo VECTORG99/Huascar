@@ -48,6 +48,13 @@ export const openApiSpec = {
         responses: { '200': { description: 'Agent execution result', content: { 'application/json': { schema: json } } }, '400': { description: 'Invalid task or role' } },
       },
     },
+    '/api/agent/execute/stream': {
+      post: {
+        summary: 'Execute an agent task with Server-Sent Events',
+        requestBody: { required: true, content: { 'application/json': { schema: json } } },
+        responses: { '200': { description: 'SSE events: start, complete, error', content: { 'text/event-stream': { schema: { type: 'string' } } } }, '400': { description: 'Invalid task or role' } },
+      },
+    },
     '/api/hooks/commit-approval': {
       post: {
         summary: 'Create a commit approval request',
