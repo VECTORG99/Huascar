@@ -53,6 +53,7 @@ export class HuascarEngine {
   private steering: SteeringConfig;
   public activeRole!: SteeringRole;
   private mcpClients: ConnectedMcpClient[] = [];
+  private mcpPids: Set<number> = new Set();
   private rag: RagEngine;
   private store: Store | null;
   private roleKey: string;
@@ -112,6 +113,9 @@ export class HuascarEngine {
         );
 
         await this.withTimeout(client.connect(transport), config.react.mcpTimeoutMs, 'connect');
+        // Track PID immediately after connect to handle zombie processes on tool listing failure
+        const pid = transport.pid;
+        if (pid) this.mcpPids.add(pid);
         const toolsResult = await this.withTimeout(client.listTools(), config.react.mcpTimeoutMs, 'listTools');
         const tools = (toolsResult.tools || []).map(t => ({
           name: t.name,
@@ -127,6 +131,12 @@ export class HuascarEngine {
         // Cleanup zombie MCP processes on timeout/failure
         try { if (transport) await transport.close(); } catch { /* ignore */ }
         try { if (client) client.close(); } catch { /* ignore */ }
+        // Force-kill zombie child process if transport.close() didn't clean up
+        const zombiePid = transport?.pid;
+        if (zombiePid) {
+          try { process.kill(zombiePid, 'SIGKILL'); } catch { /* already dead */ }
+          this.mcpPids.delete(zombiePid);
+        }
       }
     }
   }
@@ -152,11 +162,21 @@ export class HuascarEngine {
   private async disconnectMcpServers(): Promise<void> {
     for (const c of this.mcpClients) {
       try {
+        await c.transport.close();
+      } catch { /* ignore */ }
+      try {
         await c.client.close();
       } catch (err: unknown) {
         console.error(`[HuascarEngine] Error cerrando MCP "${c.name}": ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+    // Force-kill any remaining MCP child processes not cleaned up by transport.close()
+    for (const pid of this.mcpPids) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch { /* already dead */ }
+    }
+    this.mcpPids.clear();
     this.mcpClients = [];
   }
 

@@ -72,6 +72,18 @@ app.get('/api/metrics', (req, res) => {
 
 const store = new Store();
 
+// --- In-flight request tracking for graceful shutdown ---
+const activeRequests = new Set<AbortController>();
+
+app.use((req, res, next) => {
+  const controller = new AbortController();
+  activeRequests.add(controller);
+  const cleanup = () => activeRequests.delete(controller);
+  res.on('finish', cleanup);
+  res.on('close', cleanup);
+  next();
+});
+
 // --- Public routes (no auth required) ---
 app.get('/api/health', (req, res) => {
     res.json({ status: "Huascar Backend Online" });
@@ -171,26 +183,49 @@ app.use((err: unknown, req: express.Request, res: express.Response, _next: expre
 });
 
 const server = app.listen(config.server.port, config.server.host, () => {
-    console.log(`Huascar Backend corriendo en http://${config.server.host}:${config.server.port}`);
+  console.log(`Huascar Backend corriendo en http://${config.server.host}:${config.server.port}`);
 });
 
-process.on('uncaughtException', (err) => {
-    console.error(`[FATAL] Excepcion no capturada: ${err.message}`, err.stack?.split('\n').slice(0, 3).join('\n'));
+async function gracefulShutdown(signal: string): Promise<void> {
+  console.log(`[SIGNAL] ${signal} recibido, iniciando apagado gradual...`);
+
+  // 1. Stop accepting new connections
+  server.close(() => {
+    console.log('[SHUTDOWN] Servidor dejo de aceptar conexiones');
+  });
+
+  // 2. Abort all in-flight requests
+  const inflight = activeRequests.size;
+  if (inflight > 0) {
+    console.log(`[SHUTDOWN] Abortando ${inflight} solicitud(es) activa(s)...`);
+    for (const controller of activeRequests) {
+      try { controller.abort(); } catch { /* ignore */ }
+    }
+  }
+
+  // 3. Close Store (idempotent — safe even if already closed elsewhere)
+  if (store.isOpen()) {
     store.close();
-    server.close(() => process.exit(1));
+    console.log('[SHUTDOWN] Store cerrado');
+  }
+
+  // 4. Force exit after timeout if graceful shutdown stalls
+  setTimeout(() => {
+    console.error('[SHUTDOWN] Timeout de apagado, forzando salida');
+    process.exit(1);
+  }, 10000).unref();
+}
+
+// ponytail: uncaughtException/unhandledRejection are fatal — minimal cleanup, then exit
+process.on('uncaughtException', (err) => {
+  console.error(`[FATAL] Excepcion no capturada: ${err.message}`, err.stack?.split('\n').slice(0, 3).join('\n'));
+  if (store.isOpen()) store.close();
+  server.close(() => process.exit(1));
 });
 process.on('unhandledRejection', (reason) => {
-    console.error(`[FATAL] Promesa rechazada no capturada: ${reason}`);
-    store.close();
-    server.close(() => process.exit(1));
+  console.error(`[FATAL] Promesa rechazada no capturada: ${reason}`);
+  if (store.isOpen()) store.close();
+  server.close(() => process.exit(1));
 });
-process.on('SIGTERM', () => {
-    console.log('SIGTERM recibido, cerrando conexiones...');
-    store.close();
-    server.close(() => process.exit(0));
-});
-process.on('SIGINT', () => {
-    console.log('SIGINT recibido, cerrando conexiones...');
-    store.close();
-    server.close(() => process.exit(0));
-});
+process.on('SIGTERM', () => void gracefulShutdown('SIGTERM').then(() => process.exit(0)));
+process.on('SIGINT', () => void gracefulShutdown('SIGINT').then(() => process.exit(0)));
