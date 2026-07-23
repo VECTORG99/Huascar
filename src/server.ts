@@ -4,6 +4,7 @@ import cors from 'cors';
 import crypto from 'crypto';
 import { config } from './config.js';
 import { HuascarEngine } from './engine/HuascarEngine.js';
+import { mcpConnectionPool } from './engine/McpConnectionPool.js';
 import { Store } from './engine/Store.js';
 import { resolveApproval, getApprovalStatus } from './kiro/hooks.js';
 import { creatorRouter } from './creator/router.js';
@@ -187,6 +188,7 @@ async function gracefulShutdown(signal: string, exitCode: number): Promise<void>
   timeout.unref();
 
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  await mcpConnectionPool.closeAll();
   if (store.isOpen()) store.close();
   clearTimeout(timeout);
   process.exit(exitCode);
