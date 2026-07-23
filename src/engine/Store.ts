@@ -22,6 +22,7 @@ export interface DocumentChunk {
 
 export class Store {
   private db: Database.Database;
+  private closed = false;
   private dbPath: string;
 
   constructor(dbPath?: string) {
@@ -105,6 +106,15 @@ export class Store {
   }
 
   close(): void {
-    this.db.close();
+    if (this.closed) return; // Idempotent: no-op on double-close
+    this.closed = true;
+    try {
+      this.db.close();
+    } catch (err) {
+      // Suppress errors on already-closed database
+      if (!(err instanceof Error && err.message.includes('closed'))) {
+        throw err;
+      }
+    }
   }
 }
