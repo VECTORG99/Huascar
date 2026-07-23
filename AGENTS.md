@@ -1,5 +1,7 @@
 # Huascar — AI-Driven Development Directives
 
+Project-state source for agents: read root `CONTEXT.md` before changing architecture, routes, persistence, RAG, auth, deployment, or frontend/backend integration.
+
 ## 1. Modalidad de Trabajo: AI-Driven Development
 
 Todo desarrollo en este repositorio es conducido por agentes AI. El humano supervisa, aprueba y dirige. El agente ejecuta, documenta y resuelve de forma autónoma.
