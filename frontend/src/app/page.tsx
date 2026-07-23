@@ -65,7 +65,7 @@ export default function Home() {
           <h1 className="text-3xl font-bold text-emerald-400 tracking-tight">Huascar Builder</h1>
           <p className="text-zinc-400">Agent Deployment Dashboard</p>
         </div>
-        <Link href="/agents/new" className="w-fit rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20">
+        <Link href="/agents/new" aria-label="Crear un agente nuevo" className="w-fit rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-zinc-950">
           Crear agente
         </Link>
       </header>
@@ -83,7 +83,7 @@ export default function Home() {
 
         <div className="flex flex-col gap-6">
           <TabNavigation activeTab={activeTab} historyCount={history.length} onTabChange={setActiveTab} />
-          {activeTab === "terminal" && <TerminalOutput logs={logs} jsonResponse={jsonResponse} />}
+          {activeTab === "terminal" && <TerminalOutput logs={logs} jsonResponse={jsonResponse} loading={loading} />}
           {activeTab === "history" && (
             <ExecutionHistory
               history={history}
