@@ -32,6 +32,7 @@ export default function Home() {
   const [role, setRole] = useState("PR_REVIEWER");
   const [task, setTask] = useState("");
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const MAX_LOGS = 500; // Prevent memory leak from unbounded log growth
   const [logs, setLogs] = useState<string[]>([
     "[HuascarEngine] Sistema inicializado.",
     "[HuascarEngine] Esperando instrucciones..."
@@ -90,7 +91,7 @@ export default function Home() {
 
     setLoading(true);
     setJsonResponse(null);
-    setLogs(prev => [...prev,
+    setLogs(prev => [...prev.slice(-MAX_LOGS + 1),
       `[HuascarEngine] Desplegando agente con rol: ${role}...`,
       `[HOOK] Validando tarea: "${task}"...`
     ]);
@@ -113,11 +114,11 @@ export default function Home() {
       const msg = data.status === "success"
         ? "[HuascarEngine] Ejecución completada."
         : "[HuascarEngine] Ejecución bloqueada por hook.";
-      setLogs(prev => [...prev, msg]);
+      setLogs(prev => [...prev.slice(-MAX_LOGS + 1), msg]);
       setJsonResponse(data);
       fetchHistory(); // refresh after execution
     } catch (err: any) {
-      setLogs(prev => [...prev, `[ERROR] No se pudo conectar con el backend: ${err.message}`]);
+      setLogs(prev => [...prev.slice(-MAX_LOGS + 1), `[ERROR] No se pudo conectar con el backend: ${err.message}`]);
       setJsonResponse({ status: "error", agent_role: role, response: err.message });
     } finally {
       setLoading(false);
