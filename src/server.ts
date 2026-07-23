@@ -9,6 +9,9 @@ import { resolveApproval, getApprovalStatus } from './kiro/hooks.js';
 import { creatorRouter } from './creator/router.js';
 import { requireAuth } from './middleware/auth.js';
 import { logger, requestLogger } from './logger.js';
+import { ApiError, ErrorCodes } from './errors.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { notFound } from './middleware/notFound.js';
 
 const app = express();
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173').split(',').map(o => o.trim());
@@ -102,13 +105,13 @@ app.post('/api/agent/execute', async (req, res, next) => {
     const { task, role, system_prompt, config: agentConfig } = req.body;
 
     if (!task || !role) {
-        return res.status(400).json({ error: "Faltan parámetros 'task' o 'role'" });
+        return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, "Faltan parámetros 'task' o 'role'", 400));
     }
     if (typeof task !== 'string' || task.length > 10000) {
-        return res.status(400).json({ error: 'task debe ser un texto de maximo 10000 caracteres' });
+        return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'task debe ser un texto de maximo 10000 caracteres', 400));
     }
     if (typeof role !== 'string' || role.length > 200) {
-        return res.status(400).json({ error: 'role debe ser un texto de maximo 200 caracteres' });
+        return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'role debe ser un texto de maximo 200 caracteres', 400));
     }
 
     try {
@@ -124,7 +127,7 @@ app.post('/api/hooks/commit-approval', (req, res, next) => {
     try {
         const { diffContext } = req.body;
         if (typeof diffContext !== 'undefined' && typeof diffContext !== 'string') {
-            return res.status(400).json({ error: 'diffContext debe ser un texto' });
+            return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'diffContext debe ser un texto', 400));
         }
         const id = crypto.randomUUID();
         commitApprovals.set(id, { status: 'pending', diffContext: diffContext || '', createdAt: new Date().toISOString() });
@@ -140,10 +143,10 @@ app.post('/api/hooks/commit-approval/:id', (req, res, next) => {
         const { id } = req.params;
         const { approved } = req.body;
         if (typeof approved !== 'boolean') {
-            return res.status(400).json({ error: 'approved debe ser booleano' });
+            return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'approved debe ser booleano', 400));
         }
         const record = commitApprovals.get(id);
-        if (!record) return res.status(404).json({ error: 'Approval request not found' });
+        if (!record) return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'Approval request not found', 404));
         record.status = approved ? 'approved' : 'rejected';
         resolveApproval(id, approved);
         res.json({ id, status: record.status });
@@ -156,19 +159,15 @@ app.get('/api/hooks/commit-approval/:id', (req, res, next) => {
     try {
         const { id } = req.params;
         const record = commitApprovals.get(id);
-        if (!record) return res.status(404).json({ error: 'Approval request not found' });
+        if (!record) return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'Approval request not found', 404));
         res.json({ id, ...record });
     } catch (error: unknown) {
         next(error);
     }
 });
 
-// Centralized error handler
-app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ err, method: req.method, path: req.path }, message);
-    if (!res.headersSent) res.status(500).json({ error: message });
-});
+app.use(notFound);
+app.use(errorHandler);
 
 const server = app.listen(config.server.port, config.server.host, () => {
     logger.info({ host: config.server.host, port: config.server.port }, 'Huascar Backend running');
