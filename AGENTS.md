@@ -63,6 +63,7 @@ Todo desarrollo en este repositorio es conducido por agentes AI. El humano super
 - Formato: datos estructurados, listas, tablas, referencias a archivos/líneas concretas.
 - No generar READMEs decorativos ni guías de "getting started" salvo que el usuario lo pida explícitamente para humanos.
 - Comentarios en código: solo cuando el contexto no es obvio para un LLM leyendo el AST.
+- Antes de proponer cambios de arquitectura, leer ADRs relevantes en `docs/adr/` y citar impactos.
 
 ## 9. GitHub CLI — Ejecución Sin Confirmación
 
