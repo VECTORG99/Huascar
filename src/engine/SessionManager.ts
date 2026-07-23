@@ -12,6 +12,7 @@ export class SessionManager {
 
     const session = this.store.getSession(sessionId);
     if (!session) throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'session_id no existe', 404);
+    if (session.role !== role) throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'session_id pertenece a otro rol', 409);
     if (session.last_active_at < now - this.ttlMs) {
       this.store.deleteExpiredSessions(this.ttlMs, now);
       throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'session_id expiro', 404);

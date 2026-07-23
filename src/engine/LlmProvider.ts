@@ -109,7 +109,7 @@ export async function generateTextWithFallback(
         if (attempt < maxAttempts && isRetryableError(err)) {
           const retryAfterMs = getRetryAfterMs(err);
           const exponentialMs = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
-          const delayMs = retryAfterMs ?? Math.min(exponentialMs + Math.floor(exponentialMs * 0.25 * random()), maxDelayMs);
+          const delayMs = Math.min(retryAfterMs ?? exponentialMs + Math.floor(exponentialMs * 0.25 * random()), maxDelayMs);
           logger.warn({ err, provider: providerModel.provider, model: providerModel.modelId, attempt, delayMs }, '[LlmProvider] Provider failed, retrying');
           if (delayMs > 0) await wait(delayMs);
           continue;
