@@ -81,10 +81,11 @@ npm --prefix agent-creator run build
 
 ### Add Role
 
-1. Edit `src/kiro/steering.json` under `roles` with an uppercase key, `name`, `system_prompt`, and `temperature`.
-2. Keep JSON schema-valid; do not add fields unless `src/kiro/schemas/steering.schema.json` changes with tests.
-3. If route exposure changes, update `src/routes/roles.ts` tests.
-4. Run `npm run test:unit`.
+1. Edit `src/kiro/steering.json` under `roles` with an uppercase key, `name`, `description`, `recommended_tools`, `examples`, `system_prompt`, and `temperature`.
+2. For runtime-specific roles, point `STEERING_CONFIG_PATH` at an external schema-valid JSON file instead of editing source.
+3. Keep JSON schema-valid; do not add fields unless `src/kiro/schemas/steering.schema.json` changes with tests.
+4. If route exposure changes, update `src/routes/roles.ts` tests.
+5. Run `npm run test:unit`.
 
 ### Add MCP Server
 

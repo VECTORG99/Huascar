@@ -3,7 +3,13 @@ import { Router } from 'express';
 import { config } from '../config.js';
 
 interface SteeringConfig {
-  roles?: Record<string, { name?: string; temperature?: number }>;
+  roles?: Record<string, {
+    name?: string;
+    description?: string;
+    recommended_tools?: string[];
+    examples?: string[];
+    temperature?: number;
+  }>;
 }
 
 export function readRoles(readFile: typeof fs.readFileSync = fs.readFileSync) {
@@ -11,6 +17,9 @@ export function readRoles(readFile: typeof fs.readFileSync = fs.readFileSync) {
   return Object.entries(steering.roles ?? {}).map(([id, role]) => ({
     id,
     name: role.name ?? id,
+    description: role.description,
+    recommended_tools: role.recommended_tools ?? [],
+    examples: role.examples ?? [],
     temperature: role.temperature,
   }));
 }

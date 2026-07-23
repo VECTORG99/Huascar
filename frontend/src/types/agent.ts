@@ -30,6 +30,10 @@ export interface AgentConfig {
 export interface AgentRole {
   id: string;
   name: string;
+  description?: string;
+  recommended_tools?: string[];
+  examples?: string[];
+  temperature?: number;
 }
 
 export type Tab = "terminal" | "history";
