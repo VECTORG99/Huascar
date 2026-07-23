@@ -26,7 +26,7 @@ export function deepHealthCheck(store: Store | null): HealthStatus {
   if (store) {
     try {
       const t0 = Date.now();
-      store.getExecutions(1); // lightweight query
+      store.getHistory(1); // lightweight query
       checks.database = { status: 'ok', latency_ms: Date.now() - t0 };
     } catch (err) {
       checks.database = { status: 'error', error: err instanceof Error ? err.message : 'unknown' };
