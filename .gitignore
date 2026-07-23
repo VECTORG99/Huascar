@@ -9,10 +9,13 @@ out/
 # Environment
 .env
 .env.local
+.env.development
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local
 .env.*.local
+!.env.example
 
 # Database
 data/
@@ -27,12 +30,14 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # Logs
 *.log
@@ -42,3 +47,8 @@ npm-debug.log*
 .slim/
 tmp/
 .kiro/
+
+# Node version management
+.node-version
+.nvmrc
+.npmrc
