@@ -61,5 +61,10 @@ export const config = {
   mcp: {
     stderr: envStderr('MCP_STDERR', 'ignore'),
   },
-  hasApiKey: !!(process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.LOCAL_BASE_URL),
+  hasLlmProvider: !!(
+    process.env.OPENAI_API_KEY ||
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.LOCAL_BASE_URL
+  ),
+  hasEmbeddingApiKey: !!process.env.OPENAI_API_KEY,
 };

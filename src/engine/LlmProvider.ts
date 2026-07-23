@@ -38,6 +38,7 @@ export async function generateTextWithFallback(
   options: Omit<Parameters<typeof generateText>[0], 'model'>,
   models: ConfiguredModel[] = getConfiguredModels(),
   generate: GenerateTextFn = generateText,
+  canFallback: () => boolean = () => true,
 ): ReturnType<typeof generateText> {
   let lastError: unknown;
 
@@ -46,6 +47,7 @@ export async function generateTextWithFallback(
       return await generate({ ...options, model: providerModel.model } as GenerateTextOptions);
     } catch (err) {
       lastError = err;
+      if (!canFallback()) throw err;
       logger.warn({ err, provider: providerModel.provider, model: providerModel.modelId }, '[LlmProvider] Provider failed, trying next');
     }
   }

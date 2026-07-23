@@ -24,4 +24,22 @@ describe('LlmProvider', () => {
   it('falls back to openai when the chain has no valid provider', () => {
     assert.deepStrictEqual(parseProviderChain('bogus'), ['openai']);
   });
+
+  it('does not fallback after a tool executes', async () => {
+    const calls = [];
+    const models = [
+      { provider: 'openai', modelId: 'first', model: { id: 'first' } },
+      { provider: 'local', modelId: 'second', model: { id: 'second' } },
+    ];
+
+    await assert.rejects(
+      () => generateTextWithFallback({ prompt: 'test' }, models, async options => {
+        calls.push(options.model.id);
+        throw new Error('after-tool-failure');
+      }, () => false),
+      /after-tool-failure/
+    );
+    assert.deepStrictEqual(calls, ['first']);
+  });
+
 });
