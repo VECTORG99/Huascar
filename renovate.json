@@ -1,27 +1,50 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":automergeMinor",
+    "group:allNonMajor"
+  ],
   "baseBranches": ["development"],
-  "labels": ["dependencies"],
+  "labels": ["dependencies", "automation"],
   "rangeStrategy": "pin",
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "priority:high"]
+  },
   "packageRules": [
     {
+      "description": "Group all non-major updates",
       "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all non-major dependencies",
       "automerge": true
     },
     {
+      "description": "Major updates require manual review",
       "matchUpdateTypes": ["major"],
       "automerge": false,
-      "labels": ["dependencies", "priority:medium"]
+      "labels": ["dependencies", "breaking-change"]
     },
     {
-      "matchPackagePatterns": ["eslint", "prettier", "typescript"],
-      "groupName": "dev tooling"
+      "description": "Pin devDependencies",
+      "matchDepTypes": ["devDependencies"],
+      "rangeStrategy": "pin"
     },
     {
-      "matchPackagePatterns": ["@modelcontextprotocol/*"],
-      "groupName": "MCP SDK"
+      "description": "Security updates get priority labels",
+      "matchUpdateTypes": ["pin", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Docker base image updates",
+      "matchManagers": ["dockerfile"],
+      "groupName": "Docker images",
+      "automerge": false
     }
   ],
-  "schedule": ["before 6am on Monday"]
+  "schedule": ["before 6am on monday"],
+  "timezone": "America/New_York",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2
 }
