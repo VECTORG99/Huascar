@@ -2,6 +2,9 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { config } from '../config.js';
+import { MigrationRunner } from './Migrations.js';
+import migration001 from './migrations/001_create_executions.js';
+import migration002 from './migrations/002_create_rag_documents.js';
 
 export interface ExecutionRecord {
   id: number;
@@ -23,8 +26,9 @@ export interface DocumentChunk {
 export class Store {
   private db: Database.Database;
   private dbPath: string;
+  private _closed = false;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, runner?: MigrationRunner) {
     this.dbPath = dbPath || config.paths.db;
     const dir = path.dirname(this.dbPath);
     if (!fs.existsSync(dir)) {
@@ -32,47 +36,26 @@ export class Store {
     }
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
-    this.initSchema();
-  }
-
-  private initSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS executions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        role TEXT NOT NULL,
-        task TEXT NOT NULL,
-        response TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at DESC)');
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS rag_documents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        source TEXT NOT NULL,
-        chunk_index INTEGER NOT NULL,
-        chunk_text TEXT NOT NULL,
-        embedding TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_rag_documents_source ON rag_documents(source)');
+    if (runner) {
+      runner.init(this.db);
+      runner.run();
+    } else {
+      const d = new MigrationRunner(this.db);
+      d.register(migration001);
+      d.register(migration002);
+      d.run();
+    }
   }
 
   // --- Execution history ---
 
   saveExecution(role: string, task: string, response: string): void {
-    const stmt = this.db.prepare(
-      'INSERT INTO executions (role, task, response) VALUES (?, ?, ?)'
-    );
+    const stmt = this.db.prepare('INSERT INTO executions (role, task, response) VALUES (?, ?, ?)');
     stmt.run(role, task, response);
   }
 
   getHistory(limit: number = config.store.historyLimit): ExecutionRecord[] {
-    const stmt = this.db.prepare(
-      'SELECT * FROM executions ORDER BY created_at DESC LIMIT ?'
-    );
+    const stmt = this.db.prepare('SELECT * FROM executions ORDER BY created_at DESC LIMIT ?');
     return stmt.all(limit) as ExecutionRecord[];
   }
 
@@ -81,7 +64,7 @@ export class Store {
   saveChunk(chunk: { source: string; chunkIndex: number; chunkText: string; embedding?: number[] }): void {
     const embeddingJson = chunk.embedding ? JSON.stringify(chunk.embedding) : null;
     const stmt = this.db.prepare(
-      'INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding) VALUES (?, ?, ?, ?)'
+      'INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding) VALUES (?, ?, ?, ?)',
     );
     stmt.run(chunk.source, chunk.chunkIndex, chunk.chunkText, embeddingJson);
   }
@@ -93,9 +76,9 @@ export class Store {
 
   getAllChunks(): DocumentChunk[] {
     const rows = this.db.prepare('SELECT * FROM rag_documents ORDER BY source, chunk_index').all() as any[];
-    return rows.map(r => ({
+    return rows.map((r) => ({
       ...r,
-      embedding: r.embedding ? JSON.parse(r.embedding) as number[] : null,
+      embedding: r.embedding ? (JSON.parse(r.embedding) as number[]) : null,
     }));
   }
 
@@ -104,7 +87,19 @@ export class Store {
     return row.count;
   }
 
+  isOpen(): boolean {
+    return !this._closed;
+  }
+
   close(): void {
+    if (this._closed) return;
+    this._closed = true;
+    // ponytail: WAL checkpoint before close to ensure data integrity
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch {
+      // ignore if DB already closing
+    }
     this.db.close();
   }
 }
