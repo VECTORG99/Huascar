@@ -46,22 +46,35 @@ function isPathSafe(target: string): boolean {
 
 /** Call OpenAI embedding API directly via fetch. Batching supported. */
 async function getEmbeddings(inputs: string[], model: string): Promise<number[][]> {
-  const res = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ model, input: inputs }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API error ${res.status}: ${body}`, res.status);
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), 10000);
+  try {
+    const res = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      signal: abort.signal,
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model, input: inputs }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API error ${res.status}: ${body}`, res.status);
+    }
+    const data = await res.json() as { data?: { index: number; embedding: number[] }[] };
+    if (!Array.isArray(data.data) || data.data.length !== inputs.length) {
+      throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API returned ${data.data?.length ?? 0} vectors for ${inputs.length} inputs`, 502);
+    }
+    data.data.sort((a, b) => a.index - b.index);
+    const embeddings = data.data.map(d => d.embedding);
+    if (embeddings.some(e => !Array.isArray(e) || e.length === 0 || e.some(v => typeof v !== 'number' || !Number.isFinite(v)))) {
+      throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, 'Embedding API returned invalid vectors', 502);
+    }
+    return embeddings;
+  } finally {
+    clearTimeout(timeout);
   }
-  const data = await res.json() as { data: { embedding: number[] }[] };
-  // Sort by index to match input order
-  data.data.sort((a: any, b: any) => a.index - b.index);
-  return data.data.map((d: { embedding: number[] }) => d.embedding);
 }
 
 export class RagEngine {

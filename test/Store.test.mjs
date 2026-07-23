@@ -84,4 +84,15 @@ describe('Store', () => {
     assert.ok(store.getRagSources().some(source => source.source === 'b'));
   });
 
+
+  it('does not report hash-current when embeddings are missing', () => {
+    const dbPath = '/tmp/huascar_test_missing_embedding_hash.db';
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const localStore = new Store(dbPath);
+    localStore.saveChunk({ source: 's', chunkIndex: 0, chunkText: 't', contentHash: 'h', chunkHash: 'c' });
+    assert.strictEqual(localStore.getContentHashBySource('s'), null);
+    localStore.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
 });
