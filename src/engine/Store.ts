@@ -3,6 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import { config } from '../config.js';
 import { ErrorCodes, StoreError } from '../errors.js';
+import { MigrationRunner } from './Migrations.js';
+import { initialMigrations } from './migrations/index.js';
 
 export interface ExecutionRecord {
   id: number;
@@ -35,35 +37,10 @@ export class Store {
     try {
       this.db = new Database(this.dbPath);
       this.db.pragma('journal_mode = WAL');
-      this.initSchema();
+      new MigrationRunner(this.db, initialMigrations).run();
     } catch (err) {
       throw new StoreError(ErrorCodes.STORE_QUERY_FAILED, 'Failed to initialize SQLite store', 500, { cause: err });
     }
-  }
-
-  private initSchema(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS executions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        role TEXT NOT NULL,
-        task TEXT NOT NULL,
-        response TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at DESC)');
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS rag_documents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        source TEXT NOT NULL,
-        chunk_index INTEGER NOT NULL,
-        chunk_text TEXT NOT NULL,
-        embedding TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-    this.db.exec('CREATE INDEX IF NOT EXISTS idx_rag_documents_source ON rag_documents(source)');
   }
 
   // --- Execution history ---

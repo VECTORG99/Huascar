@@ -59,4 +59,15 @@ describe('Store', () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
+
+  it('runs schema migrations', () => {
+    const dbPath = '/tmp/huascar_test_migrations_unit.db';
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const migrated = new Store(dbPath);
+    migrated.saveExecution('role', 'task', 'response');
+    assert.strictEqual(migrated.getHistory(1).length, 1);
+    migrated.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
 });
