@@ -1,5 +1,6 @@
 {
   "knowledge_bases": [
-    { "type": "local_file", "path": "./docs/CONVENTIONS.md" }
+    { "type": "local_file", "path": "./docs/CONVENTIONS.md" },
+    { "type": "local_file", "path": "./CONTEXT.md" }
   ]
 }
