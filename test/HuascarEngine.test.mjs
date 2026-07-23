@@ -47,4 +47,30 @@ describe('HuascarEngine', () => {
     assert.ok(result.status === 'success' || result.status === 'blocked');
     assert.ok(result.agent_role || result.error);
   });
+
+  it('prefers explicit systemPrompt for existing roles', async () => {
+    const { config } = await import('../src/config.js');
+    const previousMock = config.llm.mockMode;
+    const previousHasApiKey = config.hasApiKey;
+    config.llm.mockMode = false;
+    config.hasApiKey = true;
+
+    const engine = new HuascarEngine('PR_REVIEWER');
+    engine.connectMcpServers = async () => {};
+    engine.loadRagSources = async () => {};
+    engine.rag.getContext = async () => '';
+    let capturedPrompt = '';
+    engine.runReActLoop = async (systemPrompt) => {
+      capturedPrompt = systemPrompt;
+      return 'ok';
+    };
+
+    const result = await engine.executeTask('test', 'explicit prompt');
+    assert.strictEqual(result.status, 'success');
+    assert.strictEqual(capturedPrompt, 'explicit prompt');
+
+    config.llm.mockMode = previousMock;
+    config.hasApiKey = previousHasApiKey;
+  });
+
 });
