@@ -46,10 +46,14 @@ export default function HomePage() {
       <StickyFooter />
 
       {/* Scrollable content with unified space simulation as background */}
-      <div className="relative h-screen snap-y snap-mandatory overflow-x-hidden overflow-y-auto">
-        {/* The simulation renders the black hole + stars + meteors together
-            as one Canvas inside the scrollable area — so the black hole
-            stays with the hero and exits upward on scroll. */}
+      <div
+        id="space-scroll-container"
+        className="relative h-screen snap-y snap-mandatory overflow-x-hidden overflow-y-auto"
+      >
+        {/* The simulation renders the black hole + stars + meteors as a
+            fixed full-viewport canvas (see space-simulation.tsx) so the
+            black hole stays anchored on screen while stars/meteors keep
+            falling infinitely as the user scrolls down. */}
         <SpaceSimulation />
         <HeroSection />
         <ContentSections />

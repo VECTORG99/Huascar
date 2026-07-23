@@ -12,10 +12,10 @@ import {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const STAR_COUNT = 350;
-const METEOR_COUNT = 8;
-const METEOR_SPAWN_RATE = 0.04;
+const METEOR_COUNT = 22;
+const METEOR_SPAWN_RATE = 0.12;
 const CHAR_SET = ["0", "1"];
-const CHAR_SPACING = 16;
+const CHAR_SPACING = 14;
 
 // Disk tilt: how squashed the ellipse is (0 = edge-on line, 1 = face-on).
 // A small non-zero tilt lets the far side peek above/below the shadow,
@@ -79,8 +79,8 @@ function createStar(width: number, height: number): Star {
 
 function createMeteor(width: number, height: number): Meteor {
   const angle = Math.PI * 0.28 + Math.random() * 0.12;
-  const speed = Math.random() * 9 + 7;
-  const trailLength = Math.floor(Math.random() * 6) + 5;
+  const speed = Math.random() * 10 + 8;
+  const trailLength = Math.floor(Math.random() * 9) + 9;
   return {
     x: Math.random() * width * 1.3 - width * 0.15,
     y: -60,
@@ -92,10 +92,10 @@ function createMeteor(width: number, height: number): Meteor {
     })),
     hue: Math.random() * 360,
     hueSpeed: Math.random() * 6 + 3,
-    opacity: Math.random() * 0.35 + 0.25,
-    fontSize: Math.random() * 5 + 12,
+    opacity: Math.random() * 0.35 + 0.55,
+    fontSize: Math.random() * 6 + 11,
     life: 0,
-    maxLife: Math.random() * 80 + 60,
+    maxLife: Math.random() * 55 + 40,
     absorbed: false,
     stretch: 0,
   };
@@ -124,16 +124,31 @@ export function SpaceSimulation() {
     resize();
     window.addEventListener("resize", resize);
 
-    // Black hole well positioned in the upper-left region. Sized to
+    // Black hole well anchored near the very top of the viewport. Sized to
     // dominate the frame like a real horizon-scale render rather than a
-    // small decorative icon.
+    // small decorative icon. It never moves — no scroll offset is ever
+    // applied to `well`.
     const well: GravityWell = {
       x: width * 0.24,
-      y: height * 0.3,
+      y: height * 0.16,
       eventRadius: Math.min(width, height) * 0.16,
       photonRadius: Math.min(width, height) * 0.205,
       influenceRadius: Math.min(width, height) * 0.75,
     };
+
+    // Parallax scroll offset: stars and meteors drift with scroll to feel
+    // like the frame is opening up more space as the user scrolls down,
+    // while the black hole itself stays perfectly still on screen.
+    const scrollContainer = document.getElementById("space-scroll-container");
+    let scrollY = 0;
+    const handleScroll = () => {
+      scrollY = scrollContainer ? scrollContainer.scrollTop : window.scrollY;
+    };
+    scrollContainer?.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+
+    const STAR_PARALLAX = 0.18;
+    const METEOR_PARALLAX = 0.35;
 
     const stars: Star[] = Array.from({ length: STAR_COUNT }, () =>
       createStar(width, height)
@@ -145,14 +160,20 @@ export function SpaceSimulation() {
       ctx.fillRect(0, 0, width, height);
 
       // ─── Stars with gravitational lensing ──────────────────────────────
+      // Stars drift downward with a fraction of scroll (parallax), wrapping
+      // around infinitely in Y so the field never runs out while scrolling.
+      const starOffset = scrollY * STAR_PARALLAX;
       for (const star of stars) {
         star.twinklePhase += star.twinkleSpeed * 16;
         const twinkle = Math.sin(star.twinklePhase);
         const baseOp = star.baseOpacity * (0.35 + Math.abs(twinkle) * 0.65);
         const baseR = star.baseRadius * (0.75 + Math.abs(twinkle) * 0.5);
 
+        const wrappedY =
+          ((star.oy + starOffset) % height + height) % height;
+
         const lensed = lensPoint(
-          { x: star.ox, y: star.oy },
+          { x: star.ox, y: wrappedY },
           well
         );
 
@@ -309,7 +330,14 @@ export function SpaceSimulation() {
       }
 
       // ─── Meteors with gravitational effects ────────────────────────────
-      if (meteors.length < METEOR_COUNT && Math.random() < METEOR_SPAWN_RATE) {
+      // Scroll adds a bit more room/energy to the field: spawn rate and
+      // fall speed scale up slightly with scroll depth, so the deeper the
+      // user scrolls the busier and faster the meteor shower feels — while
+      // the black hole itself never moves.
+      const scrollFactor = Math.min(1, scrollY / (height * 2));
+      const dynamicSpawnRate = METEOR_SPAWN_RATE * (1 + scrollFactor * METEOR_PARALLAX);
+      const dynamicMeteorCount = Math.round(METEOR_COUNT * (1 + scrollFactor * 0.4));
+      if (meteors.length < dynamicMeteorCount && Math.random() < dynamicSpawnRate) {
         meteors.push(createMeteor(width, height));
       }
 
@@ -321,7 +349,7 @@ export function SpaceSimulation() {
         m.vx += grav.acceleration.x;
         m.vy += grav.acceleration.y;
         m.x += m.vx;
-        m.y += m.vy;
+        m.y += m.vy + scrollFactor * 0.6;
         m.life++;
         m.hue = (m.hue + m.hueSpeed) % 360;
         m.stretch = grav.tidalStretch;
@@ -334,8 +362,8 @@ export function SpaceSimulation() {
         }
 
         const progress = m.life / m.maxLife;
-        const fadeOut = progress > 0.75 ? 1 - (progress - 0.75) / 0.25 : 1;
-        const fadeIn = progress < 0.1 ? progress / 0.1 : 1;
+        const fadeOut = progress > 0.7 ? 1 - (progress - 0.7) / 0.3 : 1;
+        const fadeIn = progress < 0.06 ? progress / 0.06 : 1;
         const currentOpacity = m.opacity * fadeOut * fadeIn;
 
         if (m.life > m.maxLife || m.y > height + 100 || m.x > width + 200 || m.x < -200) {
@@ -358,18 +386,25 @@ export function SpaceSimulation() {
           const effectiveOffset = charData.offset * (1 + m.stretch * 3);
           const cx = m.x - dirX * effectiveOffset;
           const cy = m.y - dirY * effectiveOffset;
-          const trailFade = 1 - c / m.chars.length;
+          // Sharp, fast falloff: the trail reads as a raw digital burst that
+          // dissolves into noise almost immediately instead of a smooth tail.
+          const t = c / m.chars.length;
+          const trailFade = Math.pow(1 - t, 3.2);
           const charOpacity = currentOpacity * trailFade;
 
-          if (charOpacity < 0.02) continue;
+          if (charOpacity < 0.035) continue;
 
           const charHue = (m.hue + c * 20) % 360;
-          const saturation = grav.influence > 0.3 ? 100 - grav.influence * 40 : 100;
-          const lightness = grav.influence > 0.5 ? 60 + grav.influence * 20 : 60;
+          // Crank saturation/contrast up and keep it there — no softening
+          // toward gray as gravity pulls on it, so the color stays raw.
+          const saturation = 100;
+          const lightness = grav.influence > 0.5 ? 68 + grav.influence * 22 : 62;
 
           if (c === 0) {
+            // Tight, hard-edged glow only on the leading character — crude
+            // and punchy rather than a soft diffuse blur.
             ctx.shadowColor = `hsla(${charHue}, ${saturation}%, ${lightness}%, ${charOpacity})`;
-            ctx.shadowBlur = 8 + m.stretch * 12;
+            ctx.shadowBlur = 3 + m.stretch * 6;
           } else {
             ctx.shadowBlur = 0;
           }
@@ -389,7 +424,9 @@ export function SpaceSimulation() {
             ctx.fillText(charData.char, cx, cy);
           }
 
-          if (Math.random() < 0.03) charData.char = randomChar();
+          // High glyph-flicker rate: digits keep flipping between 0/1 so the
+          // trail reads as raw, busy binary noise rather than static text.
+          if (Math.random() < 0.22) charData.char = randomChar();
         }
         ctx.shadowBlur = 0;
       }
@@ -405,13 +442,14 @@ export function SpaceSimulation() {
     return () => {
       cancelAnimationFrame(animRef.current);
       window.removeEventListener("resize", resize);
+      scrollContainer?.removeEventListener("scroll", handleScroll);
     };
   }, []);
 
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+      className="pointer-events-none fixed inset-0 z-[1] h-screen w-screen"
       aria-hidden="true"
     />
   );
