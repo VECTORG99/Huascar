@@ -35,6 +35,15 @@ interface SteeringConfig {
 
 type AgentHooks = typeof agentHooks;
 
+export interface HuascarEngineDeps {
+  store?: Store;
+  readFile?: (path: string, encoding: BufferEncoding) => string;
+  exists?: (path: string) => boolean;
+  rag?: RagEngine;
+  mcpPool?: { getConnections(): Promise<ConnectedMcpClient[]>; closeAll?(): Promise<void> };
+  generateTextWithFallback?: typeof generateTextWithFallback;
+}
+
 export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks = agentHooks): ToolSet {
   const aiTools: ToolSet = {};
 
@@ -95,25 +104,35 @@ export class HuascarEngine {
   private rag: RagEngine;
   private store: Store | null;
   private roleKey: string;
+  private deps: Required<Pick<HuascarEngineDeps, 'readFile' | 'exists' | 'mcpPool' | 'generateTextWithFallback'>>;
 
-  constructor(roleKey: string, store?: Store) {
-    this.steering = JSON.parse(fs.readFileSync(config.paths.steering, config.rag.encoding));
+  constructor(roleKey: string, store?: Store);
+  constructor(roleKey: string, deps?: HuascarEngineDeps);
+  constructor(roleKey: string, storeOrDeps?: Store | HuascarEngineDeps) {
+    const deps = storeOrDeps instanceof Store ? { store: storeOrDeps } : storeOrDeps ?? {};
+    this.deps = {
+      readFile: deps.readFile ?? ((path, encoding) => fs.readFileSync(path, encoding)),
+      exists: deps.exists ?? fs.existsSync,
+      mcpPool: deps.mcpPool ?? mcpConnectionPool,
+      generateTextWithFallback: deps.generateTextWithFallback ?? generateTextWithFallback,
+    };
+    this.steering = JSON.parse(this.deps.readFile(config.paths.steering, config.rag.encoding));
     this.roleKey = roleKey;
-    this.rag = new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding, store: store ?? undefined });
-    this.store = store || null;
+    this.rag = deps.rag ?? new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding, store: deps.store });
+    this.store = deps.store || null;
   }
 
   private async connectMcpServers(): Promise<void> {
-    this.mcpClients = (await mcpConnectionPool.getConnections()).map(c => ({ ...c, tools: [...c.tools] }));
+    this.mcpClients = (await this.deps.mcpPool.getConnections()).map(c => ({ ...c, tools: [...c.tools] }));
   }
 
   private async loadRagSources(): Promise<void> {
-    if (!fs.existsSync(config.paths.rag)) {
+    if (!this.deps.exists(config.paths.rag)) {
       logger.info('[HuascarEngine] rag.json no encontrado, saltando RAG.');
       return;
     }
     try {
-      const ragConfig: RagConfig = JSON.parse(fs.readFileSync(config.paths.rag, config.rag.encoding));
+      const ragConfig: RagConfig = JSON.parse(this.deps.readFile(config.paths.rag, config.rag.encoding));
       if (!Array.isArray(ragConfig.knowledge_bases)) {
         logger.warn('[HuascarEngine] knowledge_bases no es un array, saltando RAG.');
         return;
@@ -195,7 +214,7 @@ export class HuascarEngine {
 
 
   private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
-    const { text } = await generateTextWithFallback({
+    const { text } = await this.deps.generateTextWithFallback({
       system: systemPrompt,
       prompt: task,
       tools: buildAiTools(this.mcpClients),
