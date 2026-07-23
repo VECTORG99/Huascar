@@ -104,9 +104,77 @@ export type RagSource =
   | { type: 'web_url'; url: string };
 
 const PROJECT_ROOT = path.resolve('.');
+const RAG_ROOT = path.resolve(process.env.RAG_ROOT || '.');
+
+// Allowed file extensions for RAG ingestion
+const RAG_ALLOWED_EXTENSIONS = new Set([
+  '.md', '.txt', '.json', '.yaml', '.yml', '.toml',
+  '.ts', '.js', '.mjs', '.cjs', '.tsx', '.jsx',
+  '.py', '.go', '.rs', '.java', '.rb', '.sh',
+  '.css', '.html', '.xml', '.csv', '.sql',
+  '.dockerfile', '.tf', '.hcl',
+]);
+
+// Blocked file patterns — sensitive files that should NEVER be ingested
+const RAG_BLOCKED_PATTERNS = [
+  /\.env(\.|$)/i,          // .env, .env.local, .env.production
+  /\.pem$/i,               // Private keys
+  /\.key$/i,               // Private keys
+  /\.p12$/i,               // PKCS12 certs
+  /\.pfx$/i,               // PFX certs
+  /id_rsa/i,               // SSH keys
+  /\.db$/i,                // Database files
+  /\.sqlite$/i,            // SQLite databases
+  /credentials/i,          // Credential files
+  /secrets?\./i,           // Secret files
+  /\.npmrc$/i,             // npm config (may have tokens)
+  /\.netrc$/i,             // Network credentials
+  /\.git\//,               // Git internals
+  /node_modules\//,        // Dependencies
+  /package-lock\.json$/i,  // Lock files (noise, no value)
+];
+
 function isPathSafe(target: string): boolean {
   const resolved = path.resolve(target);
-  return resolved === PROJECT_ROOT || resolved.startsWith(PROJECT_ROOT + path.sep);
+  // Must be within RAG_ROOT (defaults to project root)
+  if (resolved !== RAG_ROOT && !resolved.startsWith(RAG_ROOT + path.sep)) {
+    return false;
+  }
+  // Resolve symlinks to prevent escape via symbolic links
+  try {
+    const real = fs.realpathSync(resolved);
+    if (real !== RAG_ROOT && !real.startsWith(RAG_ROOT + path.sep)) {
+      return false;
+    }
+  } catch {
+    // If realpath fails (file doesn't exist), block it
+    return false;
+  }
+  return true;
+}
+
+function isFileAllowed(filePath: string): boolean {
+  const basename = path.basename(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+
+  // Block hidden files (except explicitly allowed like .eslintrc)
+  if (basename.startsWith('.') && !RAG_ALLOWED_EXTENSIONS.has(ext)) {
+    return false;
+  }
+
+  // Check against blocked patterns
+  for (const pattern of RAG_BLOCKED_PATTERNS) {
+    if (pattern.test(filePath) || pattern.test(basename)) {
+      return false;
+    }
+  }
+
+  // Must have an allowed extension
+  if (!RAG_ALLOWED_EXTENSIONS.has(ext) && ext !== '') {
+    return false;
+  }
+
+  return true;
 }
 
 /** Call OpenAI embedding API directly via fetch. Batching supported. */
@@ -331,10 +399,14 @@ export class RagEngine {
         switch (source.type) {
           case 'local_file': {
             if (!isPathSafe(source.path)) {
-              logger.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
+              logger.warn(`[RagEngine] Path blocked (outside RAG root or symlink escape): ${source.path}`);
               break;
             }
             const resolved = path.resolve(source.path);
+            if (!isFileAllowed(resolved)) {
+              logger.warn(`[RagEngine] File blocked by security policy: ${source.path}`);
+              break;
+            }
             const content = fs.readFileSync(resolved, this.encoding);
             this.loadedContent.push(this.wrapSnippet(source.path, content));
             await this.indexContent(source.path, content);
@@ -342,7 +414,7 @@ export class RagEngine {
           }
           case 'local_directory': {
             if (!isPathSafe(source.path)) {
-              logger.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
+              logger.warn(`[RagEngine] Path blocked (outside RAG root or symlink escape): ${source.path}`);
               break;
             }
             const resolved = path.resolve(source.path);
@@ -350,6 +422,10 @@ export class RagEngine {
             const files = fs.readdirSync(resolved).filter(f => f.endsWith(ext));
             for (const file of files) {
               const filePath = path.join(resolved, file);
+              if (!isFileAllowed(filePath)) {
+                logger.warn(`[RagEngine] File blocked by security policy: ${file}`);
+                continue;
+              }
               try {
                 const content = fs.readFileSync(filePath, this.encoding);
                 const label = path.join(source.path, file);
