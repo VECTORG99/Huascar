@@ -230,7 +230,7 @@ function conditionMatches(condition: QuestionCondition, answers: CreatorAnswers)
   }
 }
 
-function isAnswered(question: DecisionQuestion, value: CreatorAnswerValue | undefined): boolean {
+function isAnswered(_question: DecisionQuestion, value: CreatorAnswerValue | undefined): boolean {
   if (value === undefined) return false;
   if (typeof value === 'string') return value.trim().length > 0;
   if (typeof value === 'boolean') return true;
@@ -385,7 +385,8 @@ export function evaluateDecisionTree(input: unknown): DecisionEvaluation {
   for (const question of creatorQuestions) {
     if (question.visibleWhen && !conditionMatches(question.visibleWhen, answers)) continue;
     visibleQuestions.push(question);
-    if (parsed.answers[question.id] !== undefined) answers[question.id] = parsed.answers[question.id];
+    const answerValue = parsed.answers[question.id];
+    if (answerValue !== undefined) answers[question.id] = answerValue;
   }
 
   const visibleIds = new Set(visibleQuestions.map(question => question.id));

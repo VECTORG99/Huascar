@@ -117,7 +117,13 @@ export class HuascarEngine {
   private steering: SteeringConfig;
   public activeRole!: SteeringRole;
   private mcpClients: ConnectedMcpClient[] = [];
+  // Set by agentConfig.security.require_commit_approval; exposed via getter
+  // for callers that gate commit/apply steps on this flag (see routes/hooks.ts).
   private requireCommitApproval = false;
+
+  get commitApprovalRequired(): boolean {
+    return this.requireCommitApproval;
+  }
   private rag: RagEngine;
   private store: Store | null;
   private roleKey: string;
@@ -167,16 +173,17 @@ export class HuascarEngine {
 
   async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '', mockScenario?: string) {
     const registeredRole = registeredSteeringRole(agentConfig?.steering, this.roleKey);
+    const steeringRole = this.steering.roles[this.roleKey];
     if (registeredRole) {
       this.activeRole = registeredRole;
-    } else if (!this.steering.roles[this.roleKey]) {
+    } else if (!steeringRole) {
       if (systemPrompt) {
         this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
       } else {
         throw new EngineError(ErrorCodes.ENGINE_ROLE_NOT_FOUND, `El rol '${this.roleKey}' no existe en steering.json`, 404);
       }
     } else {
-      this.activeRole = this.steering.roles[this.roleKey];
+      this.activeRole = steeringRole;
     }
     logger.info(`\n[HuascarEngine] Iniciando LLM ReAct Loop...`);
     logger.info(`[HuascarEngine] Rol activo: ${this.activeRole.name}`);

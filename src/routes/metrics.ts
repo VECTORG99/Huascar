@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Router, type RequestHandler } from 'express';
-import { logger, requestLogger } from '../logger.js';
+import { requestLogger } from '../logger.js';
 
 export type MetricsState = {
   startTime: number;

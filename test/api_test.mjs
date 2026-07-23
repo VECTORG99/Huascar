@@ -45,8 +45,8 @@ try {
   await assertJson('GET', '/api/v1/creator/tutorial', null, 200, 'skippable');
   const partial = await assertJson('POST', '/api/v1/creator/evaluate', { answers: {} }, 200, 'nextQuestion');
   if (partial.nextQuestion?.id !== 'agent_name') throw new Error('Creator did not start with agent_name');
-  await assertJson('POST', '/api/v1/creator/preview', { answers: { agent_name: 'Incomplete' } }, 422, 'issues');
-  await assertJson('POST', '/api/v1/creator/evaluate', { answers: {}, workflowVersion: '0.0.0' }, 409, 'issues');
+  await assertJson('POST', '/api/v1/creator/preview', { answers: { agent_name: 'Incomplete' } }, 422, 'error');
+  await assertJson('POST', '/api/v1/creator/evaluate', { answers: {}, workflowVersion: '0.0.0' }, 409, 'error');
   const preview = await assertJson('POST', '/api/v1/creator/preview', { answers: developmentAnswers, workflowVersion: '1.0.0', catalogVersion: '1.0.0' }, 200, 'artifacts');
   if (!preview.artifacts.some(file => file.path === 'docs/WHY.md')) throw new Error('Preview missing WHY documentation');
 
@@ -61,7 +61,7 @@ try {
   console.log(`GET /api/history?limit=5 -> ${res.status} ${ok ? 'PASS' : 'FAIL'}`);
   if (ok) passed++; else failed++;
 
-  await assertJson('POST', '/api/agent/execute', { task: 'test', role: 'NONEXISTENT' }, 500, 'error');
+  await assertJson('POST', '/api/agent/execute', { task: 'test', role: 'NONEXISTENT' }, 404, 'error');
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 } catch (e) {

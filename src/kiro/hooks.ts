@@ -63,7 +63,7 @@ export function deactivateAdminBypass(): void {
 function parseCommand(cmd: string): { binary: string; fullCmd: string }[] {
   return cmd.split(/\s*[|;&]\s*/).map(s => s.trim()).filter(Boolean).map(seg => {
     const parts = seg.split(/\s+/);
-    return { binary: parts[0], fullCmd: seg };
+    return { binary: parts[0] ?? '', fullCmd: seg };
   });
 }
 

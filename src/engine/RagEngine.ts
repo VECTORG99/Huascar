@@ -25,13 +25,14 @@ function isPrivateIp(ip: string): boolean {
   // IPv4 checks
   const parts = ip.split('.').map(Number);
   if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
-    if (parts[0] === 127) return true;                          // 127.0.0.0/8 loopback
-    if (parts[0] === 10) return true;                           // 10.0.0.0/8 private
-    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12
-    if (parts[0] === 192 && parts[1] === 168) return true;     // 192.168.0.0/16
-    if (parts[0] === 169 && parts[1] === 254) return true;     // 169.254.0.0/16 link-local
-    if (parts[0] === 0) return true;                            // 0.0.0.0/8
-    if (parts[0] >= 224) return true;                           // 224.0.0.0+ multicast/reserved
+    const [p0 = -1, p1 = -1] = parts;
+    if (p0 === 127) return true;                          // 127.0.0.0/8 loopback
+    if (p0 === 10) return true;                           // 10.0.0.0/8 private
+    if (p0 === 172 && p1 >= 16 && p1 <= 31) return true; // 172.16.0.0/12
+    if (p0 === 192 && p1 === 168) return true;     // 192.168.0.0/16
+    if (p0 === 169 && p1 === 254) return true;     // 169.254.0.0/16 link-local
+    if (p0 === 0) return true;                            // 0.0.0.0/8
+    if (p0 >= 224) return true;                           // 224.0.0.0+ multicast/reserved
   }
   // IPv6 checks
   if (ip === '::1' || ip === '::' || ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd')) {
@@ -103,7 +104,6 @@ export type RagSource =
   | { type: 'inline'; content: string }
   | { type: 'web_url'; url: string };
 
-const PROJECT_ROOT = path.resolve('.');
 const RAG_ROOT = path.resolve(process.env.RAG_ROOT || '.');
 
 // Allowed file extensions for RAG ingestion
@@ -211,7 +211,6 @@ async function getEmbeddings(inputs: string[], model: string): Promise<number[][
 }
 
 export class RagEngine {
-  private sources: RagSource[] = [];
   private loadedContent: string[] = [];
   private maxContentChars: number;
   private encoding: BufferEncoding;
@@ -223,16 +222,6 @@ export class RagEngine {
     this.maxContentChars = options?.maxContentChars ?? config.rag.maxContentChars;
     this.encoding = options?.encoding ?? config.rag.encoding;
     this.store = options?.store ?? null;
-  }
-
-  private sourceLabel(source: RagSource): string {
-    switch (source.type) {
-      case 'local_file': return source.path;
-      case 'local_directory': return source.path;
-      case 'inline': return 'inline';
-      case 'web_url': return `URL: ${source.url}`;
-      default: return 'unknown';
-    }
   }
 
   /** Split text into chunks preserving paragraph/sentence boundaries. */
@@ -319,7 +308,7 @@ export class RagEngine {
     const out: { section: string; text: string }[] = [];
     let section = '';
     for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i].trim();
+      const block = (blocks[i] ?? '').trim();
       if (!block) continue;
       const [firstLine = '', ...restLines] = block.split('\n');
       const rest = restLines.join('\n').trim();
@@ -373,13 +362,15 @@ export class RagEngine {
         logger.warn({ err, source, start: i, end: i + batch.length }, '[RagEngine] Error embebiendo lote');
       }
       for (let j = 0; j < batch.length; j++) {
+        const item = batch[j];
+        if (!item) continue;
         this.store.saveChunk({
           source,
           chunkIndex: i + j,
-          chunkText: batch[j].chunkText,
+          chunkText: item.chunkText,
           embedding: embeddings?.[j] ?? undefined,
           contentHash,
-          chunkHash: batch[j].chunkHash,
+          chunkHash: item.chunkHash,
         });
       }
     }
@@ -391,7 +382,6 @@ export class RagEngine {
     if (this.loadedContent.length > 0) {
       logger.warn(`[RagEngine] Reemplazando ${this.loadedContent.length} fuentes cargadas anteriormente.`);
     }
-    this.sources = sources;
     this.loadedContent = [];
 
     for (const source of sources) {
@@ -504,7 +494,9 @@ export class RagEngine {
     let queryVec: number[];
     try {
       const embeddings = await this.getEmbeddingsWithRetry([query]);
-      queryVec = embeddings[0];
+      const first = embeddings[0];
+      if (!first) return [];
+      queryVec = first;
     } catch (err) {
       logger.warn({ err }, '[RagEngine] Error generando embedding de query');
       return [];

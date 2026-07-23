@@ -39,7 +39,9 @@ export function loadMockScenario(name = config.llm.mockScenario, readFile = (pat
     const custom = asScenario(parsed) ?? (parsed && typeof parsed === 'object' ? asScenario((parsed as Record<string, unknown>)[name]) : null);
     if (custom) return custom;
   }
-  return builtIns[name] ?? builtIns.happy_path;
+  const scenario = builtIns[name] ?? builtIns.happy_path;
+  if (!scenario) throw new Error('[MockProvider] built-in scenario "happy_path" is missing');
+  return scenario;
 }
 
 export async function runMockScenario(options: {

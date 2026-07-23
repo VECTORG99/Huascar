@@ -1,8 +1,6 @@
 import 'dotenv/config';
 import { Store } from './Store.js';
 import { logger } from '../logger.js';
-import { MigrationRunner } from './Migrations.js';
-import { initialMigrations } from './migrations/index.js';
 
 async function init(): Promise<void> {
   logger.info('[init] Inicializando base de datos...');
