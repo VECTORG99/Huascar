@@ -1,83 +1,90 @@
-# Huascar — AI-Driven Development Directives
+# Huascar — AI Agent Directives
 
-Project-state source for agents: read root `CONTEXT.md` before changing architecture, routes, persistence, RAG, auth, deployment, or frontend/backend integration. Read `docs/CONVENTIONS.md` before code changes. Use `CONTRIBUTING.md` for AI contributor recipes and PR quality gates.
+Audience: AI agents changing this repository. Keep this file as the entrypoint; use linked docs for full detail.
 
-## 1. Modalidad de Trabajo: AI-Driven Development
+## Required Reading Order
 
-Todo desarrollo en este repositorio es conducido por agentes AI. El humano supervisa, aprueba y dirige. El agente ejecuta, documenta y resuelve de forma autónoma.
+1. `AGENTS.md` — execution rules, workflow, protected branches.
+2. `CONTEXT.md` — required before architecture, routes, persistence, RAG, auth, deployment, or frontend/backend integration changes.
+3. `docs/CONVENTIONS.md` — required before code changes; source, tests, docs, Git/PR style.
+4. `CONTRIBUTING.md` — AI contributor recipes and PR quality gate.
+5. Relevant `docs/adr/*.md` — required before proposing/changing architecture decisions.
 
-## 2. Issue Tracking (GitHub Issues — Única Fuente de Verdad)
+## Project Context
 
-- **NUNCA** crear archivos locales de tracking (`TODO.md`, `BACKLOG.md`, listas en comentarios, etc.).
-- Todo trabajo pendiente, bug, mejora o tarea se registra como **GitHub Issue** usando `gh issue create`.
-- Antes de empezar cualquier trabajo, el agente **DEBE**:
-  1. Crear o identificar el issue correspondiente en GitHub.
-  2. Asignar etiqueta de prioridad (`priority:critical`, `priority:high`, `priority:medium`, `priority:low`).
-  3. Confirmar con el usuario qué issue trabajar si hay ambigüedad.
+- Multi-app repo without npm workspaces.
+- Backend: root Express/TypeScript app; entrypoint `src/server.ts` -> `src/app.ts`; root `package.json` owns backend scripts/tests.
+- Frontend dashboard: `frontend/` Next app; separate dependency domain.
+- Agent creator UI/tool: `agent-creator/` Vite app; separate dependency domain.
+- Docs: root docs plus `docs/`, `docs/adr/`; docs are machine-readable for agents.
+- Tests: root `test/*.test.mjs` using Node's built-in test runner.
 
-## 3. Branching Strategy
+## Code Conventions Summary
 
-| Rama | Propósito |
+- TypeScript is strict ESM; source imports use `.js` specifiers.
+- Avoid `any`; use `unknown` at trust boundaries, narrow, then convert.
+- Use `src/logger.ts` logger; do not use `console.*` in source.
+- Throw `Error`/`AppError` subclasses from `src/errors.ts` when the caller needs stable error shape/status.
+- Tests use `node:test` and `node:assert/strict`; do not add a test framework for ordinary unit coverage.
+- Keep the smallest safe change; no new dependency, abstraction, folder, or config unless needed now.
+
+## AI Workflow
+
+| Step | Rule |
 |---|---|
-| `master` | Producción. Solo recibe merges de `development` en releases. Dispara deploys y automatizaciones de producción. |
-| `development` | Integración. Todo PR apunta aquí. Rama base para nuevas features y fixes. |
-| `feature/*`, `fix/*`, `hotfix/*` | Ramas de trabajo. Se crean desde `development`. |
+| Issue | GitHub Issues are the only source of truth. Create/identify the issue and priority label before work; ask only if ambiguous. |
+| Branch | Base work on current `origin/development`; use `feature/*`, `fix/*`, `docs/*`, or `hotfix/*`. |
+| Implement | Scope changes to the issue; no local tracking docs (`TODO.md`, `BACKLOG.md`) or drive-by refactors. |
+| Test | Add/update the smallest useful test for changed behavior/docs/config; run relevant commands. |
+| PR | Push branch and open PR to `development` with `Closes #N`, summary, validation, deviations/blockers. |
+| Review | Inspect overlapping open PRs/issues before PR; resolve conflicts autonomously when safe. |
+| Merge | Merge only through `gh pr merge`; never push directly to `master` or `development`. |
 
-- **NUNCA** hacer push directo a `master` salvo hotfix urgente autorizado explícitamente por el usuario.
-- **NUNCA** hacer push directo a `development`. Todo pasa por PR.
+## Testing Commands
 
-## 4. Pull Requests (Obligatorio)
+Run from repository root unless noted.
 
-- Todo cambio (feature, fix, refactor, docs) **DEBE** pasar por PR.
-- PR target: `development` (salvo hotfix urgente → `master`).
-- Merge de PRs se ejecuta exclusivamente con `gh pr merge`.
-- Antes de crear un PR, el agente **DEBE**:
-  1. Revisar PRs e issues abiertos para detectar solapamiento o conflictos potenciales.
-  2. Si hay conflicto: intentar resolver autónomamente. Si no es posible, preguntar al usuario.
-  3. Vincular el issue correspondiente en el PR (`Closes #N`).
+| Command | Use |
+|---|---|
+| `npm run test:unit` | Default required unit/docs/config check. |
+| `npx tsc --noEmit` | TypeScript validation after source/API/config changes or when tests require it. |
+| `npm run test:all` | Unit plus legacy API test when broader backend confidence is needed. |
+| `node --import tsx/esm --test test/<file>.test.mjs` | Narrow test for a touched area. |
+| `npm --prefix frontend run build` | Frontend dashboard changes only. |
+| `npm --prefix agent-creator run build` | Agent creator changes only. |
 
-## 5. CI / Testing
+## Environment Variables
 
-- CI y tests corren en **todas** las ramas (`master`, `development`) y en **todos** los PRs sin excepción.
-- Los tests no tienen restricciones de rama ni requieren ejecución manual.
-- Todo nuevo código debe incluir tests. No hay excepciones.
-- Si un test falla en CI, el agente debe corregirlo antes de solicitar merge.
+- Primary reference: `.env.example` at repo root.
+- Frontend local public env reference: `agent-creator/.env.example` when changing that app.
+- Config owner: `src/config.ts`; auth env is also read by `src/middleware/auth.ts`.
+- Env/config changes require care: update `.env.example` and docs/tests in the same PR; never print or commit secret values.
 
-## 6. Releases
+## Useful Commands
 
-- Release = merge de `development` → `master`.
-- Solo se hace release cuando el usuario lo solicita o cuando se cumple un milestone definido.
-- Todo deploy y automatización de producción se dispara desde `master`.
+| Command | Use |
+|---|---|
+| `git checkout -B <branch> origin/development` | Start/reset an issue branch from integration. |
+| `git status --short` | Inspect pending changes. |
+| `git diff` | Review unstaged diff before commit/PR. |
+| `npm run dev` | Run backend with `tsx watch src/server.ts`. |
+| `npm run start` | Run backend once with `tsx src/server.ts`. |
+| `npm run typecheck` | Alias for `tsc --noEmit`. |
+| `gh issue list` | Check issue overlap. |
+| `gh pr list --base development` | Check PR overlap. |
+| `gh pr create --base development` | Open required PR. |
 
-## 7. Resolución de Conflictos y Autonomía
+## Rules
 
-- El agente debe minimizar la interacción con el usuario. Resolver de forma autónoma siempre que sea posible.
-- Si hay PRs o issues similares/solapados:
-  1. Detectar antes de crear nuevos.
-  2. Consolidar si es viable.
-  3. Preguntar al usuario solo si la decisión es ambigua o destructiva.
-- Si hay conflictos de merge: resolver autónomamente si el cambio es claro. Preguntar solo si hay riesgo de pérdida de lógica.
+- No direct pushes to `master` or `development`; all changes go through PRs to `development` unless an explicitly authorized hotfix targets `master`.
+- Do not duplicate full docs here; extend `CONTEXT.md`, `docs/CONVENTIONS.md`, `CONTRIBUTING.md`, or ADRs when detail belongs there.
+- Do not create unnecessary docs or decorative README prose; agent docs stay direct, structured, path-specific.
+- Tests after changes are required; if a check cannot run, document the blocker in PR and final response.
+- Config/env/security/auth/deploy changes require matching `.env.example`/docs/tests updates and no secret output.
+- CI runs on all branches/PRs; fix failing tests before requesting merge.
+- Releases are `development` -> `master` only when requested or milestone-defined.
+- Destructive GitHub operations require confirmation: `gh repo delete`, `gh pr merge --admin`, `gh release delete`, irreversible destructive actions.
 
-## 8. Documentación (Para LLMs, No Para Humanos)
+## GitHub CLI Permissions
 
-- Toda documentación generada está optimizada para consumo de agentes AI.
-- Directa, técnica, sin narrativa innecesaria, sin introducciones genéricas, sin disclaimers.
-- Formato: datos estructurados, listas, tablas, referencias a archivos/líneas concretas.
-- No generar READMEs decorativos ni guías de "getting started" salvo que el usuario lo pida explícitamente para humanos.
-- Comentarios en código: solo cuando el contexto no es obvio para un LLM leyendo el AST.
-- Antes de proponer cambios de arquitectura, leer ADRs relevantes en `docs/adr/` y citar impactos.
-
-## 9. GitHub CLI — Ejecución Sin Confirmación
-
-El agente tiene autorización total para ejecutar comandos de `gh` CLI sin pedir confirmación, incluyendo:
-- `gh issue create`, `gh issue list`, `gh issue close`, `gh issue edit`
-- `gh pr create`, `gh pr list`, `gh pr merge` (sin --admin), `gh pr edit`
-- `gh pr view`, `gh pr diff`, `gh pr checks`
-- `gh run list`, `gh run view`, `gh run rerun`
-- `gh label create`, `gh label list`
-
-**Excepciones que SÍ requieren confirmación:**
-- `gh repo delete`
-- `gh pr merge --admin`
-- `gh release delete`
-- Cualquier operación destructiva irreversible
+Allowed without confirmation: `gh issue create/list/close/edit`, `gh pr create/list/view/diff/checks/edit/merge` without `--admin`, `gh run list/view/rerun`, `gh label create/list`.
