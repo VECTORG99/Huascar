@@ -10,7 +10,7 @@ Updated: 2026-07-23
 - SQLite retention cleanup is bounded by `RETENTION_EXECUTION_MAX_AGE_DAYS`, `RETENTION_EXECUTION_MAX_COUNT`, and `RETENTION_RAG_CHUNKS_MAX_PER_SOURCE`; `RETENTION_CLEANUP_ON_START=false` by default.
 - Migrations are code-based and run at `Store` construction: `001_create_executions`, `002_create_rag_documents`, `003_add_rag_hashes`, `004_create_sessions`, `005_create_agents`.
 - Agent execution is centralized in `src/engine/HuascarEngine.ts`: steering role resolution, MCP tool wrapping, RAG loading/context, AI SDK provider fallback, and execution history persistence.
-- Current default steering roles are `PR_REVIEWER` and `SCAFFOLDER` in `src/kiro/steering.json`.
+- Current default steering roles are `PR_REVIEWER`, `SCAFFOLDER`, `TESTER`, `DOCUMENTER`, `REFACTORER`, `DEBUGGER`, and `DEVOPS` in `src/kiro/steering.json`; `STEERING_CONFIG_PATH` can point at an external JSON file.
 - Auth is environment-driven in `src/middleware/auth.ts`: `AUTH_REQUIRED=false` by default; `AUTH_REQUIRED=true` requires `HUASCAR_API_KEYS` through `Authorization: Bearer` or `X-API-Key`.
 
 ## What Works
@@ -20,7 +20,7 @@ Updated: 2026-07-23
   - `POST /api/agent/execute` runs a role/task and returns JSON.
   - `POST /api/agent/execute/stream` emits SSE events: `start`, `complete`, or `error`.
   - `GET /api/history` returns execution history from SQLite.
-  - `GET /api/roles` reads roles from steering config.
+  - `GET /api/roles` reads roles from steering config and returns safe metadata (`description`, `recommended_tools`, `examples`) without `system_prompt`.
   - `GET /api/rag/sources` and `DELETE /api/rag/sources/:source` inspect/remove indexed RAG chunks.
   - `/api/agents` CRUD stores generated agent configs; `/api/agents/:id/execute` runs a registered agent.
   - `/api/v1/creator/catalog|workflow|tutorial` are public; `/evaluate|preview|generate` are protected by API auth when enabled.
