@@ -1,0 +1,45 @@
+{
+  "id": "tool_usage",
+  "name": "Tool Usage Tasks",
+  "description": "Tasks that require the agent to use tools effectively",
+  "cases": [
+    {
+      "id": "tool_001",
+      "task": "Read the contents of package.json and tell me the project name",
+      "role": "DEVELOPER",
+      "expectedContains": ["huascar"],
+      "shouldComplete": true,
+      "tags": ["file-read", "tool-use"]
+    },
+    {
+      "id": "tool_002",
+      "task": "List the files in the src directory",
+      "role": "DEVELOPER",
+      "expectedContains": ["server.ts"],
+      "shouldComplete": true,
+      "tags": ["directory", "tool-use"]
+    },
+    {
+      "id": "tool_003",
+      "task": "Check if the project has any TypeScript errors by running tsc --noEmit",
+      "role": "DEVELOPER",
+      "shouldComplete": true,
+      "tags": ["build", "tool-use"]
+    },
+    {
+      "id": "tool_004",
+      "task": "Find all test files in the project",
+      "role": "DEVELOPER",
+      "expectedContains": [".test"],
+      "shouldComplete": true,
+      "tags": ["search", "tool-use"]
+    },
+    {
+      "id": "tool_005",
+      "task": "What version of Node.js is required by this project?",
+      "role": "DEVELOPER",
+      "shouldComplete": true,
+      "tags": ["analysis", "tool-use"]
+    }
+  ]
+}
