@@ -34,25 +34,6 @@ function assertVersions(body: CreatorRequestBody): void {
   }
 }
 
-function sendError(res: express.Response, error: unknown): void {
-  if (error instanceof CreatorInputError) {
-    res.status(error.statusCode).type('application/problem+json').json({
-      type: 'https://github.com/VECTORG99/Huascar/blob/master/README.md#errores-del-creator',
-      title: error.message,
-      status: error.statusCode,
-      issues: error.issues,
-    });
-    return;
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  res.status(500).type('application/problem+json').json({
-    type: 'about:blank',
-    title: 'Error interno del creador.',
-    status: 500,
-    detail: message,
-  });
-}
-
 creatorRouter.use((_req, res, next) => {
   res.set('X-Creator-Workflow-Version', WORKFLOW_VERSION);
   res.set('X-Creator-Catalog-Version', CATALOG_VERSION);
@@ -77,23 +58,23 @@ creatorRouter.get('/tutorial', (_req, res) => {
   res.json(creatorTutorial);
 });
 
-creatorRouter.post('/evaluate', (req, res) => {
+creatorRouter.post('/evaluate', (req, res, next) => {
   try {
     const body = parseBody(req.body);
     assertVersions(body);
     res.json(evaluateDecisionTree(body.answers));
   } catch (error: unknown) {
-    sendError(res, error);
+    next(error);
   }
 });
 
-function previewHandler(req: express.Request, res: express.Response): void {
+function previewHandler(req: express.Request, res: express.Response, next: express.NextFunction): void {
   try {
     const body = parseBody(req.body);
     assertVersions(body);
     res.json(generateAgentBundle(body.answers));
   } catch (error: unknown) {
-    sendError(res, error);
+    next(error);
   }
 }
 

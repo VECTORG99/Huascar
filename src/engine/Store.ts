@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { config } from '../config.js';
+import { ErrorCodes, StoreError } from '../errors.js';
 
 export interface ExecutionRecord {
   id: number;
@@ -30,9 +31,13 @@ export class Store {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    this.db = new Database(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.initSchema();
+    try {
+      this.db = new Database(this.dbPath);
+      this.db.pragma('journal_mode = WAL');
+      this.initSchema();
+    } catch (err) {
+      throw new StoreError(ErrorCodes.STORE_QUERY_FAILED, 'Failed to initialize SQLite store', 500, { cause: err });
+    }
   }
 
   private initSchema(): void {

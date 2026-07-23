@@ -8,6 +8,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
 import { RagEngine, RagSource } from './RagEngine.js';
 import { Store } from './Store.js';
 import { logger } from '../logger.js';
+import { EngineError, ErrorCodes, McpError } from '../errors.js';
 
 interface RagConfig {
   knowledge_bases: RagSource[];
@@ -77,7 +78,7 @@ export class HuascarEngine {
   private async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`MCP ${label} timeout after ${ms}ms`)), ms);
+      timer = setTimeout(() => reject(new McpError(ErrorCodes.MCP_TOOL_TIMEOUT, `MCP ${label} timeout after ${ms}ms`, 504)), ms);
     });
     try {
       return await Promise.race([promise, timeout]);
@@ -166,7 +167,7 @@ export class HuascarEngine {
       if (systemPrompt) {
         this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
       } else {
-        throw new Error(`El rol '${this.roleKey}' no existe en steering.json`);
+        throw new EngineError(ErrorCodes.ENGINE_ROLE_NOT_FOUND, `El rol '${this.roleKey}' no existe en steering.json`, 404);
       }
     } else {
       this.activeRole = this.steering.roles[this.roleKey];

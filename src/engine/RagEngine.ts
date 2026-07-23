@@ -4,6 +4,7 @@ import { URL } from 'url';
 import { config } from '../config.js';
 import { Store } from './Store.js';
 import { logger } from '../logger.js';
+import { ErrorCodes, RagError } from '../errors.js';
 
 // ponytail: blocklist-based SSRF prevention. Upgrade to DNS-resolution check if deployed publicly.
 const BLOCKED_HOSTS = [
@@ -59,7 +60,7 @@ async function getEmbeddings(inputs: string[], model: string): Promise<number[][
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Embedding API error ${res.status}: ${body}`);
+    throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API error ${res.status}: ${body}`, 502);
   }
   const data = await res.json() as { data: { embedding: number[] }[] };
   // Sort by index to match input order
