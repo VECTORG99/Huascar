@@ -21,8 +21,8 @@ const CHAR_SPACING = 14;
 // A small non-zero tilt lets the far side peek above/below the shadow,
 // like real renders of Sgr A*/M87*, without losing the edge-on silhouette.
 const DISK_TILT = 0.34;
-const DISK_SAMPLES = 220;
-const SECONDARY_SAMPLES = 90;
+const DISK_SAMPLES = 160;
+const SECONDARY_SAMPLES = 70;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,16 @@ interface Meteor {
   maxLife: number;
   absorbed: boolean;
   stretch: number;
+}
+
+// White rings with a faint, slowly shifting RGB tint — like the meteor
+// trails' hue cycling but pushed almost entirely toward white. Saturation
+// stays low and lightness stays high so color is barely perceptible.
+const RING_TINT_SATURATION = 30;
+const RING_TINT_SPEED = 0.00006;
+
+function ringHue(time: number, positionSeed: number): number {
+  return (time * RING_TINT_SPEED * 360 + positionSeed * 47) % 360;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -215,7 +225,7 @@ export function SpaceSimulation() {
           const arcRadius =
             starDistance + (well.photonRadius - starDistance) * dissolve;
           const arcHalfSpan = 0.05 + dissolve * 0.5; // radians, grows as it merges
-          const arcSegments = 16;
+          const arcSegments = 8;
           const lineOpBase = op * (0.5 + dissolve * 1.1);
           ctx.lineCap = "butt";
 
@@ -309,15 +319,15 @@ export function SpaceSimulation() {
           const op = clampOpacity(s.brightness * orbitBrightness * 0.55);
           if (op < 0.015) continue;
 
-          const hue = s.doppler > 0 ? 205 + s.doppler * 25 : 18 + s.doppler * -10;
-          const light = 78 + s.doppler * 14;
+          const hue = ringHue(performance.now(), i * 0.01 + ratio);
+          const light = 84 + s.doppler * 6;
 
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);
           ctx.lineTo(next.x, next.y);
-          ctx.strokeStyle = `hsla(${hue}, 85%, ${light}%, ${op})`;
+          ctx.strokeStyle = `hsla(${hue}, ${RING_TINT_SATURATION}%, ${light}%, ${op})`;
           ctx.lineWidth = s.width * (1 + energy * 0.6) * orbitScale;
-          ctx.lineCap = "round";
+          ctx.lineCap = "butt";
           ctx.stroke();
         }
       }
@@ -336,13 +346,13 @@ export function SpaceSimulation() {
         const next = innerSamples[(i + 1) % innerSamples.length];
         const op = clampOpacity(s.brightness * orbitBrightness * 0.85);
         if (op < 0.02) continue;
-        const hue = s.doppler > 0 ? 200 : 30;
+        const hue = ringHue(performance.now(), i * 0.01 + 5);
         ctx.beginPath();
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(next.x, next.y);
-        ctx.strokeStyle = `hsla(${hue}, 90%, 92%, ${op})`;
+        ctx.strokeStyle = `hsla(${hue}, ${RING_TINT_SATURATION}%, 88%, ${op})`;
         ctx.lineWidth = s.width * 1.3 * (1 + energy * 0.8) * orbitScale;
-        ctx.lineCap = "round";
+        ctx.lineCap = "butt";
         ctx.stroke();
       }
 
@@ -382,9 +392,10 @@ export function SpaceSimulation() {
         ctx.beginPath();
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(next.x, next.y);
-        ctx.strokeStyle = `hsla(${s.doppler > 0 ? 205 : 25}, 80%, 90%, ${op})`;
+        const secHue = ringHue(performance.now(), i * 0.02 + 11);
+        ctx.strokeStyle = `hsla(${secHue}, ${RING_TINT_SATURATION}%, 86%, ${op})`;
         ctx.lineWidth = s.width * (1 + energy * 0.6) * orbitScale;
-        ctx.lineCap = "round";
+        ctx.lineCap = "butt";
         ctx.stroke();
       }
 
@@ -409,7 +420,8 @@ export function SpaceSimulation() {
         ctx.beginPath();
         ctx.moveTo(rx, ry);
         ctx.lineTo(rx2, ry2);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${op})`;
+        const photonHue = ringHue(performance.now(), i * 0.015 + 23);
+        ctx.strokeStyle = `hsla(${photonHue}, ${RING_TINT_SATURATION}%, 90%, ${op})`;
         ctx.lineWidth = 1.5 + Math.max(0, approach) * 2 + energy * 2;
         ctx.stroke();
       }
