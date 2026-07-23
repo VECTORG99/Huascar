@@ -104,7 +104,7 @@ export class Store {
 
   getHistory(limit: number = config.store.historyLimit, offset: number = 0): ExecutionRecord[] {
     this.assertOpen();
-    const boundedLimit = Math.min(Math.max(1, limit), 100); // Cap at 100
+    const boundedLimit = Math.min(Math.max(0, limit), 100); // Cap at 100, allow 0 for "no results"
     const boundedOffset = Math.max(0, offset);
     const stmt = this.db.prepare(
       'SELECT * FROM executions ORDER BY created_at DESC LIMIT ? OFFSET ?'
