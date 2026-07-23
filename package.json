@@ -19,7 +19,13 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "prepare": "husky"
+    "prepare": "husky",
+    "dev:all": "npm run dev & npm run dev:frontend & npm run dev:agent-creator",
+    "install:all": "npm install && cd frontend && npm install && cd ../agent-creator && npm install",
+    "build:all": "npm run build && cd frontend && npm run build && cd ../agent-creator && npm run build",
+    "clean:all": "npm run clean && rm -rf frontend/.next frontend/node_modules agent-creator/dist agent-creator/node_modules",
+    "lint:all": "npx tsc --noEmit && npx prettier --check .",
+    "status": "echo '=== Backend ===' && node -e \"console.log(require('./package.json').version)\" && echo '=== Frontend ===' && node -e \"console.log(require('./frontend/package.json').version)\" && echo '=== Agent Creator ===' && node -e \"console.log(require('./agent-creator/package.json').version)\""
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
