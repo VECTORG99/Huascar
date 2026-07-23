@@ -56,7 +56,8 @@ Run from repository root unless noted.
 ## Environment Variables
 
 - Primary reference: `.env.example` at repo root.
-- Frontend local public env reference: `agent-creator/.env.example` when changing that app.
+- Next dashboard public env is documented in root `.env.example` (for example `NEXT_PUBLIC_API_URL`).
+- Agent creator local public env reference: `agent-creator/.env.example` when changing that app.
 - Config owner: `src/config.ts`; auth env is also read by `src/middleware/auth.ts`.
 - Env/config changes require care: update `.env.example` and docs/tests in the same PR; never print or commit secret values.
 

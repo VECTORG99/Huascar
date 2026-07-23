@@ -7,14 +7,15 @@ Accepted
 ## Context
 
 - Root `package.json` owns backend scripts, tests, TypeScript, and lockfile.
-- `agent-creator/` has its own frontend `package-lock.json` and Vite app lifecycle.
+- `frontend/` has its own Next.js `package-lock.json` and app lifecycle.
+- `agent-creator/` has its own Vite `package-lock.json` and app lifecycle.
 - Root scripts call frontend tasks by changing directory, e.g. `dev:agent-creator`.
 - There is no root `workspaces` field.
 
 ## Decision
 
 - Keep the current repo layout without npm workspaces.
-- Treat root backend and `agent-creator/` frontend dependencies as separate install/update domains.
+- Treat root backend, `frontend/`, and `agent-creator/` dependencies as separate install/update domains.
 - Do not add workspace tooling until shared package management is required.
 
 ## Alternatives Considered
