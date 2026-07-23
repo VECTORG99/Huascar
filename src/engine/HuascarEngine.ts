@@ -1,13 +1,14 @@
 import fs from 'fs';
 import { config } from '../config.js';
 import { agentHooks } from '../kiro/hooks.js';
-import { generateText } from 'ai';
+import { generateText, isStepCount, jsonSchema, tool, type ToolSet } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { RagEngine, RagSource } from './RagEngine.js';
 import { Store } from './Store.js';
 import { logger } from '../logger.js';
 import { EngineError, ErrorCodes } from '../errors.js';
 import { ConnectedMcpClient, mcpConnectionPool } from './McpConnectionPool.js';
+import type { JSONSchema7 } from 'json-schema';
 
 interface RagConfig {
   knowledge_bases: RagSource[];
@@ -30,6 +31,61 @@ interface SteeringRole {
 
 interface SteeringConfig {
   roles: Record<string, SteeringRole>;
+}
+
+type AgentHooks = typeof agentHooks;
+
+export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks = agentHooks): ToolSet {
+  const aiTools: ToolSet = {};
+
+  for (const c of mcpClients) {
+    for (const mcpTool of c.tools) {
+      const toolName = mcpTool.name;
+      aiTools[toolName] = tool({
+        description: mcpTool.description || 'Sin descripción',
+        inputSchema: jsonSchema((mcpTool.inputSchema ?? { type: 'object', additionalProperties: true }) as JSONSchema7),
+        execute: async (args: unknown) => {
+          const toolArgs = args as Record<string, unknown>;
+          hooks.before_action(toolName, toolArgs);
+
+          const timeoutMs = config.react.mcpTimeoutMs;
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`MCP tool "${toolName}" timed out after ${timeoutMs}ms`)), timeoutMs);
+          });
+
+          try {
+            const result = await Promise.race([
+              c.client.callTool({ name: toolName, arguments: toolArgs }),
+              timeoutPromise,
+            ]);
+            const resultContent = result.content as { type: string; text?: string }[] | undefined;
+            if (!resultContent) {
+              logger.info(`[HuascarEngine] Herramienta "${toolName}" retorno resultado sin contenido`);
+              return `Error: resultado sin contenido de "${toolName}"`;
+            }
+            let toolResult = resultContent
+              .filter(c => c.type === 'text')
+              .map(c => c.text ?? '')
+              .join('\n');
+            if (toolResult.length > config.react.toolResultMaxChars) {
+              toolResult = toolResult.slice(0, config.react.toolResultMaxChars) + '\n... [truncado]';
+            }
+            logger.info(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
+            return toolResult;
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            logger.error(`[HuascarEngine] Error en herramienta: ${errMsg}`);
+            return `Error ejecutando "${toolName}": ${errMsg}`;
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+        },
+      });
+    }
+  }
+
+  return aiTools;
 }
 
 export class HuascarEngine {
@@ -90,8 +146,6 @@ export class HuascarEngine {
     try {
       const useMock = config.llm.mockMode || !config.hasApiKey;
 
-      let mcpContext = '';
-
       if (!useMock) {
         await this.connectMcpServers();
 
@@ -112,34 +166,11 @@ export class HuascarEngine {
           }
         }
 
-        if (this.mcpClients.length > 0) {
-          mcpContext = '\n\n## Herramientas MCP disponibles:\n';
-          for (const c of this.mcpClients) {
-            for (const tool of c.tools) {
-              mcpContext += `- ${tool.name}: ${tool.description || 'Sin descripción'}\n`;
-              const schema = tool.inputSchema as { properties?: Record<string, unknown> } | undefined;
-              if (schema?.properties) {
-                const props = Object.keys(schema.properties).join(', ');
-                mcpContext += `  Parametros: ${props}\n`;
-              }
-            }
-          }
-          mcpContext += [
-            '',
-            'Para usar una herramienta, responde EXACTAMENTE con este formato:',
-            'USE_TOOL: <nombre_herramienta>',
-            'Argumentos: {"key": "value"}',
-            '',
-            'Cuando la tarea este completa, responde con:',
-            'FINAL: <respuesta final>',
-            '',
-          ].join('\n');
-        }
       }
 
       const ragContext = await this.rag.getContext(task);
       const baseSystemPrompt = systemPrompt ?? this.activeRole.system_prompt;
-      const effectiveSystemPrompt = baseSystemPrompt + (ragContext ? '\n\n' + ragContext : '') + mcpContext;
+      const effectiveSystemPrompt = baseSystemPrompt + (ragContext ? '\n\n' + ragContext : '');
 
       const responseText = !useMock
         ? await this.runReActLoop(effectiveSystemPrompt, task)
@@ -164,113 +195,16 @@ export class HuascarEngine {
 
 
   private async runReActLoop(systemPrompt: string, task: string): Promise<string> {
-    const maxIterations = config.react.maxIterations;
-    const messages: { role: string; content: string }[] = [
-      { role: 'user', content: task },
-    ];
-
-    for (let i = 0; i < maxIterations; i++) {
-      logger.info(`\n[HuascarEngine] ReAct iteracion ${i + 1}/${maxIterations}`);
-
-      const { text } = await generateText({
-        model: openai(config.llm.modelId),
-        system: systemPrompt,
-        prompt: messages[messages.length - 1].content,
-      });
-
-      logger.info(`[HuascarEngine] Respuesta LLM:\n${text}`);
-
-      const finalMatch = text.match(/FINAL:\s*(.+)/s);
-      if (finalMatch) {
-        logger.info(`[HuascarEngine] Respuesta final en iteracion ${i + 1}`);
-        return finalMatch[1].trim();
-      }
-
-      const toolMatch = text.match(/USE_TOOL:\s*(\S+)/);
-      if (!toolMatch) {
-        logger.info(`[HuascarEngine] Sin herramienta ni respuesta final, retornando respuesta cruda`);
-        return text;
-      }
-
-      const toolName = toolMatch[1].trim();
-
-      // ponytail: brace-depth parser instead of regex, handles nested JSON
-      let args: any = {};
-      const argsLabel = 'Argumentos:';
-      const argsIdx = text.indexOf(argsLabel);
-      if (argsIdx !== -1) {
-        const start = argsIdx + argsLabel.length;
-        let depth = 0;
-        let end = -1;
-        for (let i = start; i < text.length; i++) {
-          const ch = text[i];
-          if (ch === '{') { if (depth === 0 && end === -1) end = i; depth++; }
-          else if (ch === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
-        }
-        if (depth === 0 && end > start) {
-          try {
-            args = JSON.parse(text.slice(start, end));
-          } catch {
-            logger.info(`[HuascarEngine] No se pudieron parsear los argumentos JSON para "${toolName}"`);
-          }
-        }
-      }
-
-      logger.info(`[HuascarEngine] Llamando herramienta: "${toolName}"`);
-
-      // Hook de seguridad: validar herramienta real
-      agentHooks.before_action(toolName, args);
-
-      let toolResult = `Error: herramienta "${toolName}" no encontrada en ningun servidor MCP`;
-
-      for (const c of this.mcpClients) {
-        const toolDef = c.tools.find(t => t.name === toolName);
-        if (toolDef) {
-          try {
-            const timeoutMs = config.react.mcpTimeoutMs;
-            const timeoutPromise = new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error(`MCP tool "${toolName}" timed out after ${timeoutMs}ms`)), timeoutMs);
-            });
-            const callPromise = c.client.callTool({ name: toolName, arguments: args });
-            const result = await Promise.race([callPromise, timeoutPromise]);
-            const resultContent = result.content as { type: string; text?: string }[] | undefined;
-            if (!resultContent) {
-              toolResult = `Error: resultado sin contenido de "${toolName}"`;
-              logger.info(`[HuascarEngine] Herramienta "${toolName}" retorno resultado sin contenido`);
-              break;
-            }
-            toolResult = resultContent
-              .filter(c => c.type === 'text')
-              .map(c => c.text ?? '')
-              .join('\n');
-            // ponytail: truncate large tool results to avoid blowing context budget
-            if (toolResult.length > config.react.toolResultMaxChars) {
-              toolResult = toolResult.slice(0, config.react.toolResultMaxChars) + '\n... [truncado]';
-            }
-            logger.info(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
-          } catch (err: unknown) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            toolResult = `Error ejecutando "${toolName}": ${errMsg}`;
-            logger.error(`[HuascarEngine] Error en herramienta: ${errMsg}`);
-          }
-          break;
-        }
-      }
-
-      messages.push({ role: 'assistant', content: text });
-      messages.push({ role: 'user', content: `## Resultado de ${toolName}:\n${toolResult}\n\nContinua o responde FINAL: <respuesta>.` });
-    }
-
-    logger.info(`[HuascarEngine] Maximo de iteraciones (${maxIterations}) alcanzado`);
-
     const { text } = await generateText({
       model: openai(config.llm.modelId),
-      system: systemPrompt + '\n\nHas alcanzado el limite de iteraciones. Proporciona tu mejor respuesta final.',
-      prompt: messages[messages.length - 1].content,
+      system: systemPrompt,
+      prompt: task,
+      tools: buildAiTools(this.mcpClients),
+      stopWhen: isStepCount(config.react.maxIterations),
     });
 
-    const finalMatch = text.match(/FINAL:\s*(.+)/s);
-    return finalMatch ? finalMatch[1].trim() : text;
+    logger.info(`[HuascarEngine] Respuesta LLM:\n${text}`);
+    return text;
   }
 
   private runMockReActLoop(task: string): string {
