@@ -64,5 +64,9 @@
     "*.{ts,js,mjs,json,md}": [
       "prettier --check"
     ]
-  }
+  },
+  "workspaces": [
+    "frontend",
+    "agent-creator"
+  ]
 }
