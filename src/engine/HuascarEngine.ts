@@ -10,6 +10,7 @@ import { ConnectedMcpClient, mcpConnectionPool } from './McpConnectionPool.js';
 import type { JSONSchema7 } from 'json-schema';
 import { generateTextWithFallback } from './LlmProvider.js';
 import { runMockScenario } from './MockProvider.js';
+import { ConfigCache } from './ConfigCache.js';
 
 interface RagConfig {
   knowledge_bases: RagSource[];
@@ -39,13 +40,19 @@ function registeredSteeringRole(steering: unknown, roleKey: string): SteeringRol
   if (!steering || typeof steering !== 'object') return null;
   const roles = (steering as { roles?: unknown }).roles;
   const role = Array.isArray(roles)
-    ? roles.find(item => item && typeof item === 'object' && (item as Record<string, unknown>).id === roleKey)
-    : roles && typeof roles === 'object' ? (roles as Record<string, unknown>)[roleKey] : null;
+    ? roles.find((item) => item && typeof item === 'object' && (item as Record<string, unknown>).id === roleKey)
+    : roles && typeof roles === 'object'
+      ? (roles as Record<string, unknown>)[roleKey]
+      : null;
   if (!role || typeof role !== 'object') return null;
   const r = role as Record<string, unknown>;
   const system_prompt = r.prompt ?? r.system_prompt;
   if (typeof system_prompt !== 'string') return null;
-  return { name: typeof r.name === 'string' ? r.name : roleKey, system_prompt, temperature: typeof r.temperature === 'number' ? r.temperature : 0.3 };
+  return {
+    name: typeof r.name === 'string' ? r.name : roleKey,
+    system_prompt,
+    temperature: typeof r.temperature === 'number' ? r.temperature : 0.3,
+  };
 }
 
 type AgentHooks = typeof agentHooks;
@@ -59,7 +66,11 @@ export interface HuascarEngineDeps {
   generateTextWithFallback?: typeof generateTextWithFallback;
 }
 
-export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks = agentHooks, onToolExecution?: (toolName: string) => void): ToolSet {
+export function buildAiTools(
+  mcpClients: ConnectedMcpClient[],
+  hooks: AgentHooks = agentHooks,
+  onToolExecution?: (toolName: string) => void,
+): ToolSet {
   const aiTools: ToolSet = {};
 
   for (const c of mcpClients) {
@@ -76,7 +87,10 @@ export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks
           const timeoutMs = config.react.mcpTimeoutMs;
           let timer: ReturnType<typeof setTimeout> | undefined;
           const timeoutPromise = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error(`MCP tool "${toolName}" timed out after ${timeoutMs}ms`)), timeoutMs);
+            timer = setTimeout(
+              () => reject(new Error(`MCP tool "${toolName}" timed out after ${timeoutMs}ms`)),
+              timeoutMs,
+            );
           });
 
           try {
@@ -90,8 +104,8 @@ export function buildAiTools(mcpClients: ConnectedMcpClient[], hooks: AgentHooks
               return `Error: resultado sin contenido de "${toolName}"`;
             }
             let toolResult = resultContent
-              .filter(c => c.type === 'text')
-              .map(c => c.text ?? '')
+              .filter((c) => c.type === 'text')
+              .map((c) => c.text ?? '')
               .join('\n');
             if (toolResult.length > config.react.toolResultMaxChars) {
               toolResult = toolResult.slice(0, config.react.toolResultMaxChars) + '\n... [truncado]';
@@ -128,25 +142,31 @@ export class HuascarEngine {
   private store: Store | null;
   private roleKey: string;
   private deps: Required<Pick<HuascarEngineDeps, 'readFile' | 'exists' | 'mcpPool' | 'generateTextWithFallback'>>;
+  private hasCustomReadFile: boolean;
 
   constructor(roleKey: string, store?: Store);
   constructor(roleKey: string, deps?: HuascarEngineDeps);
   constructor(roleKey: string, storeOrDeps?: Store | HuascarEngineDeps) {
-    const deps = storeOrDeps instanceof Store ? { store: storeOrDeps } : storeOrDeps ?? {};
+    const deps = storeOrDeps instanceof Store ? { store: storeOrDeps } : (storeOrDeps ?? {});
+    this.hasCustomReadFile = !!deps.readFile;
     this.deps = {
       readFile: deps.readFile ?? ((path, encoding) => fs.readFileSync(path, encoding)),
       exists: deps.exists ?? fs.existsSync,
       mcpPool: deps.mcpPool ?? mcpConnectionPool,
       generateTextWithFallback: deps.generateTextWithFallback ?? generateTextWithFallback,
     };
-    this.steering = JSON.parse(this.deps.readFile(config.paths.steering, config.rag.encoding));
+    this.steering = ConfigCache.getInstance().getSteering(
+      this.hasCustomReadFile ? this.deps.readFile : undefined,
+    ) as SteeringConfig;
     this.roleKey = roleKey;
-    this.rag = deps.rag ?? new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding, store: deps.store });
+    this.rag =
+      deps.rag ??
+      new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding, store: deps.store });
     this.store = deps.store || null;
   }
 
   private async connectMcpServers(): Promise<void> {
-    this.mcpClients = (await this.deps.mcpPool.getConnections()).map(c => ({ ...c, tools: [...c.tools] }));
+    this.mcpClients = (await this.deps.mcpPool.getConnections()).map((c) => ({ ...c, tools: [...c.tools] }));
   }
 
   private async loadRagSources(): Promise<void> {
@@ -155,8 +175,11 @@ export class HuascarEngine {
       return;
     }
     try {
-      const ragConfig: RagConfig = JSON.parse(this.deps.readFile(config.paths.rag, config.rag.encoding));
-      if (!Array.isArray(ragConfig.knowledge_bases)) {
+      const ragConfig = ConfigCache.getInstance().getRag(
+        this.hasCustomReadFile ? this.deps.readFile : undefined,
+        this.deps.exists,
+      ) as RagConfig | null;
+      if (!ragConfig || !Array.isArray(ragConfig.knowledge_bases)) {
         logger.warn('[HuascarEngine] knowledge_bases no es un array, saltando RAG.');
         return;
       }
@@ -176,7 +199,14 @@ export class HuascarEngine {
     await this.disconnectMcpServers();
   }
 
-  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '', mockScenario?: string, signal?: AbortSignal) {
+  async executeTask(
+    task: string,
+    systemPrompt?: string,
+    agentConfig?: AgentConfig,
+    sessionContext = '',
+    mockScenario?: string,
+    signal?: AbortSignal,
+  ) {
     const registeredRole = registeredSteeringRole(agentConfig?.steering, this.roleKey);
     const steeringRole = this.steering.roles[this.roleKey];
     if (registeredRole) {
@@ -185,7 +215,11 @@ export class HuascarEngine {
       if (systemPrompt) {
         this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
       } else {
-        throw new EngineError(ErrorCodes.ENGINE_ROLE_NOT_FOUND, `El rol '${this.roleKey}' no existe en steering.json`, 404);
+        throw new EngineError(
+          ErrorCodes.ENGINE_ROLE_NOT_FOUND,
+          `El rol '${this.roleKey}' no existe en steering.json`,
+          404,
+        );
       }
     } else {
       this.activeRole = steeringRole;
@@ -211,16 +245,18 @@ export class HuascarEngine {
           if (agentConfig.tools !== undefined) {
             const selectedTools = new Set(agentConfig.tools);
             for (const c of this.mcpClients) {
-              c.tools = c.tools.filter(t => selectedTools.has(t.name));
+              c.tools = c.tools.filter((t) => selectedTools.has(t.name));
             }
             // Warn about unknown tool names requested by client
-            const allAvailable = new Set(this.mcpClients.flatMap(c => c.tools.map(t => t.name)));
+            const allAvailable = new Set(this.mcpClients.flatMap((c) => c.tools.map((t) => t.name)));
             for (const requested of agentConfig.tools) {
               if (!allAvailable.has(requested)) {
                 logger.warn(`[HuascarEngine] Requested tool "${requested}" not found in any MCP server — ignored`);
               }
             }
-            logger.info(`[HuascarEngine] Tool enforcement: ${selectedTools.size} selected, ${this.mcpClients.reduce((n, c) => n + c.tools.length, 0)} available after filter`);
+            logger.info(
+              `[HuascarEngine] Tool enforcement: ${selectedTools.size} selected, ${this.mcpClients.reduce((n, c) => n + c.tools.length, 0)} available after filter`,
+            );
           }
           // Add knowledge sources from config
           if (agentConfig.knowledge && agentConfig.knowledge.length > 0) {
@@ -238,7 +274,6 @@ export class HuascarEngine {
             }
           }
         }
-
       }
 
       const effectiveTask = sessionContext ? `${sessionContext}\n\nTarea actual:\n${task}` : task;
@@ -258,25 +293,30 @@ export class HuascarEngine {
         }
       }
 
-      return { status: "success", agent_role: this.activeRole.name, response: responseText };
-
+      return { status: 'success', agent_role: this.activeRole.name, response: responseText };
     } catch (error: unknown) {
-      return { status: "blocked", error: error instanceof Error ? error.message : String(error) };
+      return { status: 'blocked', error: error instanceof Error ? error.message : String(error) };
     } finally {
       await this.disconnectMcpServers();
     }
   }
 
-
   private async runReActLoop(systemPrompt: string, task: string, signal?: AbortSignal): Promise<string> {
     if (signal?.aborted) throw new Error(`Execution cancelled: ${signal.reason || 'aborted'}`);
     let toolExecuted = false;
-    const { text } = await this.deps.generateTextWithFallback({
-      system: systemPrompt,
-      prompt: task,
-      tools: buildAiTools(this.mcpClients, agentHooks, () => { toolExecuted = true; }),
-      stopWhen: isStepCount(config.react.maxIterations),
-    }, undefined, undefined, () => !toolExecuted);
+    const { text } = await this.deps.generateTextWithFallback(
+      {
+        system: systemPrompt,
+        prompt: task,
+        tools: buildAiTools(this.mcpClients, agentHooks, () => {
+          toolExecuted = true;
+        }),
+        stopWhen: isStepCount(config.react.maxIterations),
+      },
+      undefined,
+      undefined,
+      () => !toolExecuted,
+    );
 
     if (signal?.aborted) throw new Error(`Execution cancelled: ${signal.reason || 'aborted'}`);
     logger.info(`[HuascarEngine] Respuesta LLM:\n${text}`);

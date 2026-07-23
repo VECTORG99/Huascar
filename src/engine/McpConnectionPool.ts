@@ -12,6 +12,13 @@ export interface ConnectedMcpClient {
   tools: { name: string; description?: string; inputSchema?: unknown }[];
 }
 
+export interface McpServerStatus {
+  name: string;
+  status: 'connected' | 'disconnected' | 'error';
+  toolCount: number;
+  lastError?: string;
+}
+
 interface McpServerConfig {
   command: string;
   args?: string[];
@@ -25,10 +32,14 @@ interface McpServersConfig {
 
 type ConnectMcpServer = (name: string, serverConfig: McpServerConfig) => Promise<ConnectedMcpClient>;
 
+const MAX_CONNECT_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 500;
+
 export class McpConnectionPool {
   private mcpConfig: McpServersConfig | null = null;
   private connections = new Map<string, ConnectedMcpClient>();
   private loading: Promise<ConnectedMcpClient[]> | null = null;
+  private serverErrors = new Map<string, string>();
 
   constructor(private readonly connectMcpServer: ConnectMcpServer = defaultConnectMcpServer) {}
 
@@ -42,17 +53,35 @@ export class McpConnectionPool {
     }
   }
 
+  /** Returns health status of all configured MCP servers. */
+  getStatus(): McpServerStatus[] {
+    const mcpConfig = this.getConfig();
+    if (!mcpConfig) return [];
+    return Object.keys(mcpConfig.mcpServers).map((name) => {
+      const conn = this.connections.get(name);
+      const lastError = this.serverErrors.get(name);
+      if (conn) {
+        return { name, status: 'connected' as const, toolCount: conn.tools.length };
+      }
+      return { name, status: lastError ? ('error' as const) : ('disconnected' as const), toolCount: 0, lastError };
+    });
+  }
+
   async closeAll(): Promise<void> {
     const connections = [...this.connections.values()];
     this.connections.clear();
-    await Promise.all(connections.map(async c => {
-      try {
-        await c.client.close();
-        await c.transport.close();
-      } catch (err: unknown) {
-        logger.error(`[McpConnectionPool] Error cerrando MCP "${c.name}": ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }));
+    await Promise.all(
+      connections.map(async (c) => {
+        try {
+          await c.client.close();
+          await c.transport.close();
+        } catch (err: unknown) {
+          logger.error(
+            `[McpConnectionPool] Error cerrando MCP "${c.name}": ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }),
+    );
   }
 
   private async loadConnections(): Promise<ConnectedMcpClient[]> {
@@ -61,15 +90,40 @@ export class McpConnectionPool {
 
     for (const [name, serverConfig] of Object.entries(mcpConfig.mcpServers)) {
       if (this.connections.has(name)) continue;
-      try {
-        const connection = await this.connectMcpServer(name, serverConfig);
+      const connection = await this.connectWithRetry(name, serverConfig);
+      if (connection) {
         this.connections.set(name, connection);
-      } catch (err: unknown) {
-        logger.error(`[McpConnectionPool] Error conectando MCP "${name}": ${err instanceof Error ? err.message : String(err)}`);
+        this.serverErrors.delete(name);
       }
     }
 
     return [...this.connections.values()];
+  }
+
+  private async connectWithRetry(name: string, serverConfig: McpServerConfig): Promise<ConnectedMcpClient | null> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < MAX_CONNECT_RETRIES; attempt++) {
+      try {
+        const connection = await this.connectMcpServer(name, serverConfig);
+        if (attempt > 0) {
+          logger.info(`[McpConnectionPool] MCP "${name}" connected on retry ${attempt}`);
+        }
+        return connection;
+      } catch (err: unknown) {
+        lastErr = err;
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+        logger.warn(
+          `[McpConnectionPool] MCP "${name}" connect attempt ${attempt + 1}/${MAX_CONNECT_RETRIES} failed, retrying in ${delay}ms`,
+        );
+        if (attempt < MAX_CONNECT_RETRIES - 1) {
+          await sleep(delay);
+        }
+      }
+    }
+    const errMsg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    logger.error(`[McpConnectionPool] MCP "${name}" failed after ${MAX_CONNECT_RETRIES} attempts: ${errMsg}`);
+    this.serverErrors.set(name, errMsg);
+    return null;
   }
 
   private getConfig(): McpServersConfig | null {
@@ -82,6 +136,10 @@ export class McpConnectionPool {
     this.mcpConfig = JSON.parse(fs.readFileSync(config.paths.mcps, config.rag.encoding));
     return this.mcpConfig;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function defaultConnectMcpServer(name: string, serverConfig: McpServerConfig): Promise<ConnectedMcpClient> {
@@ -99,7 +157,7 @@ async function defaultConnectMcpServer(name: string, serverConfig: McpServerConf
 
     await withTimeout(client.connect(transport), config.react.mcpTimeoutMs, 'connect');
     const toolsResult = await withTimeout(client.listTools(), config.react.mcpTimeoutMs, 'listTools');
-    const tools = (toolsResult.tools || []).map(t => ({
+    const tools = (toolsResult.tools || []).map((t) => ({
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
@@ -108,8 +166,16 @@ async function defaultConnectMcpServer(name: string, serverConfig: McpServerConf
     logger.info(`[McpConnectionPool] MCP "${name}" conectado (${tools.length} herramientas)`);
     return { name, client, transport, tools };
   } catch (err) {
-    try { if (transport) await transport.close(); } catch { /* ignore */ }
-    try { if (client) await client.close(); } catch { /* ignore */ }
+    try {
+      if (transport) await transport.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (client) await client.close();
+    } catch {
+      /* ignore */
+    }
     throw err;
   }
 }
@@ -127,7 +193,9 @@ const ALLOWED_MCP_ENV_VARS = new Set([
   'LANG',
   'TERM',
   // Config-driven: extend via MCP_ALLOWED_ENV_VARS=VAR1,VAR2
-  ...(process.env.MCP_ALLOWED_ENV_VARS?.split(',').map(v => v.trim()).filter(Boolean) || []),
+  ...(process.env.MCP_ALLOWED_ENV_VARS?.split(',')
+    .map((v) => v.trim())
+    .filter(Boolean) || []),
 ]);
 
 function resolveEnv(env?: Record<string, string>): Record<string, string> | undefined {
@@ -148,7 +216,10 @@ function resolveEnv(env?: Record<string, string>): Record<string, string> | unde
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new McpError(ErrorCodes.MCP_TOOL_TIMEOUT, `MCP ${label} timeout after ${ms}ms`, 504)), ms);
+    timer = setTimeout(
+      () => reject(new McpError(ErrorCodes.MCP_TOOL_TIMEOUT, `MCP ${label} timeout after ${ms}ms`, 504)),
+      ms,
+    );
   });
   try {
     return await Promise.race([promise, timeout]);
