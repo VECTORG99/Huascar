@@ -78,7 +78,12 @@ export default function Home() {
     fetch(`${apiUrl}/api/roles`)
       .then(res => res.ok ? res.json() : null)
       .then(data => {
-        if (Array.isArray(data?.roles) && data.roles.length > 0) setRoles(data.roles);
+        if (Array.isArray(data?.roles) && data.roles.length > 0) {
+          setRoles(data.roles);
+          setRole(current =>
+            data.roles.some((agentRole: AgentRole) => agentRole.id === current) ? current : data.roles[0].id
+          );
+        }
       })
       .catch(() => {});
   }, []);
