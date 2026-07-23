@@ -35,8 +35,8 @@ describe('agent sessions', () => {
     const store = new Store(db);
     const prompts = [];
     class FakeEngine {
-      executeTask(task, _system, _config, context) {
-        prompts.push({ task, context });
+      executeTask(task, _system, _config, context, mockScenario) {
+        prompts.push({ task, context, mockScenario });
         return Promise.resolve({ status: 'success', agent_role: 'role', response: `reply:${task}` });
       }
     }
@@ -44,7 +44,7 @@ describe('agent sessions', () => {
     const server = http.createServer(app);
     try {
       await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-      const first = await post(server, { task: 'first', role: 'role' });
+      const first = await post(server, { task: 'first', role: 'role', mock_scenario: 'multi_step' });
       assert.strictEqual(first.status, 200);
       assert.ok(first.body.session_id);
 
@@ -53,6 +53,7 @@ describe('agent sessions', () => {
       assert.strictEqual(second.body.session_id, first.body.session_id);
       assert.match(prompts[1].context, /user: first/);
       assert.match(prompts[1].context, /assistant: reply:first/);
+      assert.strictEqual(prompts[0].mockScenario, 'multi_step');
     } finally {
       await new Promise(resolve => server.close(resolve));
       store.close();

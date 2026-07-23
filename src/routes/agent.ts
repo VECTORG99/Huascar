@@ -7,7 +7,7 @@ import { ApiError, ErrorCodes, formatError } from '../errors.js';
 type EngineClass = new (role: string, store: Store) => Pick<HuascarEngine, 'executeTask'>;
 
 function validateExecuteBody(body: Record<string, unknown>) {
-  const { task, role, system_prompt, config: agentConfig, session_id } = body;
+  const { task, role, system_prompt, config: agentConfig, session_id, mock_scenario } = body;
 
   if (!task || !role) {
     throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, "Faltan parámetros 'task' o 'role'", 400);
@@ -21,19 +21,22 @@ function validateExecuteBody(body: Record<string, unknown>) {
   if (session_id !== undefined && (typeof session_id !== 'string' || session_id.length > 200)) {
     throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'session_id debe ser un texto de maximo 200 caracteres', 400);
   }
+  if (mock_scenario !== undefined && (typeof mock_scenario !== 'string' || mock_scenario.length > 200)) {
+    throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'mock_scenario debe ser un texto de maximo 200 caracteres', 400);
+  }
 
-  return { task, role, system_prompt: typeof system_prompt === 'string' ? system_prompt : undefined, agentConfig: agentConfig as AgentConfig | undefined, session_id };
+  return { task, role, system_prompt: typeof system_prompt === 'string' ? system_prompt : undefined, agentConfig: agentConfig as AgentConfig | undefined, session_id, mock_scenario };
 }
 
 async function executeAgent(store: Store, Engine: EngineClass, body: Record<string, unknown>, onSession?: (sessionId: string) => void) {
-  const { task, role, system_prompt, agentConfig, session_id } = validateExecuteBody(body);
+  const { task, role, system_prompt, agentConfig, session_id, mock_scenario } = validateExecuteBody(body);
   const sessions = new SessionManager(store);
   const session = sessions.getOrCreate(session_id, role);
   onSession?.(session.id);
   const sessionContext = sessions.recentContext(session.id);
   store.addSessionMessage(session.id, 'user', task);
   const engine = new Engine(role, store);
-  const result = await engine.executeTask(task, system_prompt, agentConfig, sessionContext);
+  const result = await engine.executeTask(task, system_prompt, agentConfig, sessionContext, mock_scenario);
   store.addSessionMessage(session.id, 'assistant', result.response ?? result.error ?? result.status);
   return { ...result, session_id: session.id };
 }
