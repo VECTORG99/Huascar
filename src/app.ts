@@ -12,6 +12,7 @@ import { healthRouter } from './routes/health.js';
 import { historyRouter } from './routes/history.js';
 import { hooksRouter } from './routes/hooks.js';
 import { createMetricsState, metricsMiddleware, metricsRouter } from './routes/metrics.js';
+import { openApiRouter } from './routes/openapi.js';
 import { ragRouter } from './routes/rag.js';
 import { rolesRouter } from './routes/roles.js';
 import { commitApprovals } from './services/approvals.js';
@@ -51,6 +52,7 @@ app.use((req, res, next) => {
 app.use(metricsMiddleware(metricsState));
 app.use('/api', metricsRouter(metricsState));
 app.use('/api', healthRouter);
+app.use('/api', openApiRouter);
 
 app.use('/api', (req, res, next) => {
   // Health and metrics are already handled above
