@@ -1,14 +1,37 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["blocked_tool_patterns", "blocked_args_substrings"],
+  "required": ["version", "mode", "allowed_tools", "allowed_commands", "blocked_tool_patterns", "blocked_args_substrings"],
   "additionalProperties": false,
   "properties": {
+    "version": { "type": "string" },
+    "mode": { "type": "string", "enum": ["allowlist", "denylist"] },
+    "description": { "type": "string" },
+    "allowed_tools": { "type": "array", "items": { "type": "string" } },
+    "allowed_commands": {
+      "type": "object",
+      "required": ["entries"],
+      "properties": {
+        "description": { "type": "string" },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["binary", "allowed_args"],
+            "additionalProperties": false,
+            "properties": {
+              "binary": { "type": "string" },
+              "allowed_args": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "blocked_tool_patterns": { "type": "array", "items": { "type": "string" } },
     "blocked_args_substrings": {
       "type": "object",
       "additionalProperties": { "type": "array", "items": { "type": "string" } }
-    },
-    "allowed_tools": { "type": "array", "items": { "type": "string" } }
+    }
   }
 }
