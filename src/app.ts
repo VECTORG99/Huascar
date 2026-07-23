@@ -13,6 +13,7 @@ import { historyRouter } from './routes/history.js';
 import { hooksRouter } from './routes/hooks.js';
 import { createMetricsState, metricsMiddleware, metricsRouter } from './routes/metrics.js';
 import { ragRouter } from './routes/rag.js';
+import { rolesRouter } from './routes/roles.js';
 import { commitApprovals } from './services/approvals.js';
 
 export const app = express();
@@ -59,6 +60,7 @@ app.use('/api', (req, res, next) => {
 
 app.use('/api', historyRouter(store));
 app.use('/api', ragRouter(store));
+app.use('/api', rolesRouter());
 app.use('/api', agentRouter(store));
 app.use('/api', hooksRouter(commitApprovals));
 

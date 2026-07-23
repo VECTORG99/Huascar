@@ -26,10 +26,19 @@ interface AgentConfig {
   knowledge?: unknown[];
 }
 
+interface AgentRole {
+  id: string;
+  name: string;
+}
+
 type Tab = "terminal" | "history";
 
 export default function Home() {
   const [role, setRole] = useState("PR_REVIEWER");
+  const [roles, setRoles] = useState<AgentRole[]>([
+    { id: "PR_REVIEWER", name: "PR_REVIEWER" },
+    { id: "SCAFFOLDER", name: "SCAFFOLDER" }
+  ]);
   const [task, setTask] = useState("");
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
   const [logs, setLogs] = useState<string[]>([
@@ -62,6 +71,16 @@ export default function Home() {
     } finally {
       setHistoryLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://huascar.onrender.com';
+    fetch(`${apiUrl}/api/roles`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (Array.isArray(data?.roles) && data.roles.length > 0) setRoles(data.roles);
+      })
+      .catch(() => {});
   }, []);
 
   // Read role/task/config from URL query params (e.g. from Agent Creator redirect)
@@ -166,8 +185,9 @@ export default function Home() {
               onChange={(e) => setRole(e.target.value)}
               className="bg-zinc-950 border border-zinc-700 rounded-md p-2 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
-              <option value="PR_REVIEWER">PR_REVIEWER</option>
-              <option value="SCAFFOLDER">SCAFFOLDER</option>
+              {roles.map(agentRole => (
+                <option key={agentRole.id} value={agentRole.id}>{agentRole.name}</option>
+              ))}
             </select>
           </div>
 
