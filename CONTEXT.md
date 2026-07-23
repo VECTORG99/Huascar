@@ -26,7 +26,7 @@ Updated: 2026-07-23
 - Sessions work for direct and registered agent execution: `SessionManager` creates/touches SQLite sessions, enforces role matching and TTL, and injects recent messages into the next task.
 - SSE currently wraps the same execution path as JSON and reports lifecycle events; token/tool streaming is not implemented.
 - RAG supports `local_file`, `local_directory`, `inline`, and `web_url` sources in code; persisted vector chunks use OpenAI embeddings only when `OPENAI_API_KEY` and a `Store` exist.
-- `src/kiro/rag.json` is schema-tested as a local-file source list and currently indexes `docs/CONVENTIONS.md` plus this `CONTEXT.md`.
+- `src/kiro/rag.json` is schema-tested as a local-file source list and currently indexes the configured docs sources, including `docs/CONVENTIONS.md`, `CONTRIBUTING.md`, and this `CONTEXT.md`.
 - MCP config exists in `src/kiro/mcps.json` for filesystem, bash, and GitHub servers; `McpConnectionPool` supplies connected tools to `HuascarEngine`.
 - Next dashboard in `frontend/src/app/page.tsx` can list roles, submit tasks, show terminal/history tabs, and deep-link imported role/task/config query params.
 - Next creator route `frontend/src/app/agents/new/page.tsx` consumes backend creator workflow/catalog, generates a bundle, and registers it through `/api/agents`.
