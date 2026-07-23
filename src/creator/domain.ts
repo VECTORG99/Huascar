@@ -1,3 +1,4 @@
+import { CreatorError, ErrorCodes } from '../errors.js';
 export type CreatorAnswerValue = string | boolean | string[];
 export type CreatorAnswers = Record<string, CreatorAnswerValue>;
 
@@ -163,14 +164,11 @@ export interface GeneratedAgentBundle {
   warnings: string[];
 }
 
-export class CreatorInputError extends Error {
-  readonly statusCode: number;
+export class CreatorInputError extends CreatorError {
   readonly issues: AnswerIssue[];
 
   constructor(message: string, issues: AnswerIssue[], statusCode = 400) {
-    super(message);
-    this.name = 'CreatorInputError';
+    super(ErrorCodes.CREATOR_INPUT_ERROR, message, statusCode, { issues });
     this.issues = issues;
-    this.statusCode = statusCode;
   }
 }
