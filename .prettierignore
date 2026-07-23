@@ -1,6 +1,11 @@
 node_modules
 dist
 .next
+out
 coverage
-package-lock.json
 *.db
+*.db-wal
+*.db-shm
+package-lock.json
+data/
+.git
