@@ -143,4 +143,52 @@ describe('Store', () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
+  it('retention deletes old executions and reports rows', () => {
+    const dbPath = '/tmp/huascar_test_retention_age.db';
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const localStore = new Store(dbPath);
+    localStore.saveExecution('role', 'old', 'response', '2024-01-01 00:00:00');
+    localStore.saveExecution('role', 'new', 'response', '2024-04-01 00:00:00');
+
+    const report = localStore.cleanupRetention({ executionMaxAgeDays: 30, executionMaxCount: 100, ragChunksMaxPerSource: 100, cleanupOnStart: false }, Date.parse('2024-04-15T00:00:00Z'));
+
+    assert.deepStrictEqual(report, { executionsDeleted: 1, chunksDeleted: 0 });
+    assert.deepStrictEqual(localStore.getHistory(10).map(row => row.task), ['new']);
+    localStore.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
+  it('retention count limit keeps newest executions', () => {
+    const dbPath = '/tmp/huascar_test_retention_execution_count.db';
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const localStore = new Store(dbPath);
+    localStore.saveExecution('role', 'oldest', 'response', '2024-01-01 00:00:00');
+    localStore.saveExecution('role', 'middle', 'response', '2024-01-02 00:00:00');
+    localStore.saveExecution('role', 'newest', 'response', '2024-01-03 00:00:00');
+
+    const report = localStore.cleanupRetention({ executionMaxAgeDays: 365, executionMaxCount: 2, ragChunksMaxPerSource: 100, cleanupOnStart: false }, Date.parse('2024-01-04T00:00:00Z'));
+
+    assert.deepStrictEqual(report, { executionsDeleted: 1, chunksDeleted: 0 });
+    assert.deepStrictEqual(localStore.getHistory(10).map(row => row.task), ['newest', 'middle']);
+    localStore.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
+  it('retention keeps newest chunks per source', () => {
+    const dbPath = '/tmp/huascar_test_retention_chunks.db';
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const localStore = new Store(dbPath);
+    for (let i = 0; i < 3; i++) {
+      localStore.saveChunk({ source: 'a', chunkIndex: i, chunkText: `a-${i}`, createdAt: `2024-01-0${i + 1} 00:00:00` });
+      localStore.saveChunk({ source: 'b', chunkIndex: i, chunkText: `b-${i}`, createdAt: `2024-01-0${i + 1} 00:00:00` });
+    }
+
+    const report = localStore.cleanupRetention({ executionMaxAgeDays: 365, executionMaxCount: 100, ragChunksMaxPerSource: 2, cleanupOnStart: false }, Date.parse('2024-01-04T00:00:00Z'));
+
+    assert.deepStrictEqual(report, { executionsDeleted: 0, chunksDeleted: 2 });
+    assert.deepStrictEqual(localStore.getAllChunks().map(row => row.chunk_text), ['a-1', 'a-2', 'b-1', 'b-2']);
+    localStore.close();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+  });
+
 });

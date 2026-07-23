@@ -33,6 +33,11 @@ export interface RagSourceSummary {
   chunk_hashes: string[];
 }
 
+export interface RetentionCleanupReport {
+  executionsDeleted: number;
+  chunksDeleted: number;
+}
+
 export interface SessionRecord {
   id: string;
   role: string;
@@ -81,11 +86,11 @@ export class Store {
 
   // --- Execution history ---
 
-  saveExecution(role: string, task: string, response: string): void {
-    const stmt = this.db.prepare(
-      'INSERT INTO executions (role, task, response) VALUES (?, ?, ?)'
-    );
-    stmt.run(role, task, response);
+  saveExecution(role: string, task: string, response: string, createdAt?: string): void {
+    const stmt = createdAt
+      ? this.db.prepare('INSERT INTO executions (role, task, response, created_at) VALUES (?, ?, ?, ?)')
+      : this.db.prepare('INSERT INTO executions (role, task, response) VALUES (?, ?, ?)');
+    createdAt ? stmt.run(role, task, response, createdAt) : stmt.run(role, task, response);
   }
 
   getHistory(limit: number = config.store.historyLimit): ExecutionRecord[] {
@@ -167,14 +172,41 @@ export class Store {
     })(now - ttlMs) as number;
   }
 
+  cleanupRetention(options = config.retention, now = Date.now()): RetentionCleanupReport {
+    const cutoff = new Date(now - options.executionMaxAgeDays * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+
+    return this.db.transaction(() => {
+      const executionsDeletedByAge = this.db.prepare('DELETE FROM executions WHERE created_at < ?').run(cutoff).changes;
+      const executionsDeletedByCount = this.db.prepare(`
+        DELETE FROM executions
+        WHERE id NOT IN (
+          SELECT id FROM executions ORDER BY created_at DESC, id DESC LIMIT ?
+        )
+      `).run(options.executionMaxCount).changes;
+      const chunksDeleted = this.db.prepare(`
+        DELETE FROM rag_documents
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY source ORDER BY created_at DESC, id DESC) as row_num
+            FROM rag_documents
+          )
+          WHERE row_num > ?
+        )
+      `).run(options.ragChunksMaxPerSource).changes;
+
+      return { executionsDeleted: executionsDeletedByAge + executionsDeletedByCount, chunksDeleted };
+    })() as RetentionCleanupReport;
+  }
+
   // --- Vector RAG ---
 
-  saveChunk(chunk: { source: string; chunkIndex: number; chunkText: string; embedding?: number[]; contentHash?: string; chunkHash?: string }): void {
+  saveChunk(chunk: { source: string; chunkIndex: number; chunkText: string; embedding?: number[]; contentHash?: string; chunkHash?: string; createdAt?: string }): void {
     const embeddingJson = chunk.embedding ? JSON.stringify(chunk.embedding) : null;
-    const stmt = this.db.prepare(
-      'INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash) VALUES (?, ?, ?, ?, ?, ?)'
-    );
-    stmt.run(chunk.source, chunk.chunkIndex, chunk.chunkText, embeddingJson, chunk.contentHash ?? null, chunk.chunkHash ?? null);
+    const stmt = chunk.createdAt
+      ? this.db.prepare('INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      : this.db.prepare('INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash) VALUES (?, ?, ?, ?, ?, ?)');
+    const params = [chunk.source, chunk.chunkIndex, chunk.chunkText, embeddingJson, chunk.contentHash ?? null, chunk.chunkHash ?? null];
+    chunk.createdAt ? stmt.run(...params, chunk.createdAt) : stmt.run(...params);
   }
 
   getContentHashBySource(source: string): string | null {

@@ -8,6 +8,12 @@ function envInt(key: string, fallback: number): number {
   return isNaN(n) || n < 0 ? fallback : n;
 }
 
+function envBool(key: string, fallback: boolean): boolean {
+  const v = process.env[key];
+  if (v === undefined) return fallback;
+  return v === 'true';
+}
+
 const VALID_ENCODINGS = ['ascii', 'utf8', 'utf-8', 'utf16le', 'ucs2', 'ucs-2', 'base64', 'base64url', 'latin1', 'binary', 'hex'];
 function envEncoding(key: string, fallback: BufferEncoding): BufferEncoding {
   const v = process.env[key];
@@ -49,6 +55,12 @@ export const config = {
   },
   store: {
     historyLimit: envInt('HISTORY_LIMIT_DEFAULT', 20),
+  },
+  retention: {
+    executionMaxAgeDays: envInt('RETENTION_EXECUTION_MAX_AGE_DAYS', 90),
+    executionMaxCount: envInt('RETENTION_EXECUTION_MAX_COUNT', 10000),
+    ragChunksMaxPerSource: envInt('RETENTION_RAG_CHUNKS_MAX_PER_SOURCE', 500),
+    cleanupOnStart: envBool('RETENTION_CLEANUP_ON_START', false),
   },
   sessions: {
     ttlMs: envInt('SESSION_TTL_MS', 60 * 60 * 1000),
