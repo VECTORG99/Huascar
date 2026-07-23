@@ -1,15 +1,16 @@
+## Summary
+<!-- Brief description of changes -->
+
 ## Changes
+<!-- List of specific changes -->
 
-<!-- Brief description of what this PR does -->
-
-## Related Issues
-
+## Related Issue
 <!-- Closes #N -->
 
-## Checklist
+## Testing
+<!-- What was tested and how -->
 
+## Checklist
 - [ ] Tests added/updated
-- [ ] `tsc --noEmit` passes
-- [ ] No `console.log` in production code (use structured logger)
-- [ ] Config changes reflected in `.env.example`
-- [ ] Breaking changes documented
+- [ ] TypeScript compiles without errors
+- [ ] No secrets in code or logs
