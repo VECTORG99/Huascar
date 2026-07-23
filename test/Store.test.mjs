@@ -70,4 +70,18 @@ describe('Store', () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
+  it('lists and deletes RAG sources', () => {
+    store.saveChunk({ source: 'a', chunkIndex: 0, chunkText: 'one', contentHash: 'content-a', chunkHash: 'hash-1' });
+    store.saveChunk({ source: 'a', chunkIndex: 1, chunkText: 'two', contentHash: 'content-a', chunkHash: 'hash-2' });
+    store.saveChunk({ source: 'b', chunkIndex: 0, chunkText: 'three', contentHash: 'content-b', chunkHash: 'hash-3' });
+
+    const sourceA = store.getRagSources().find(source => source.source === 'a');
+    assert.strictEqual(sourceA.chunk_count, 2);
+    assert.deepStrictEqual(sourceA.chunk_hashes, ['hash-1', 'hash-2']);
+
+    store.deleteChunksBySource('a');
+    assert.ok(!store.getRagSources().some(source => source.source === 'a'));
+    assert.ok(store.getRagSources().some(source => source.source === 'b'));
+  });
+
 });

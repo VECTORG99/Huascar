@@ -30,6 +30,8 @@ function sha256(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export type RagSource =
   | { type: 'local_file'; path: string }
   | { type: 'local_directory'; path: string; pattern: string }
@@ -54,7 +56,7 @@ async function getEmbeddings(inputs: string[], model: string): Promise<number[][
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API error ${res.status}: ${body}`, 502);
+    throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API error ${res.status}: ${body}`, res.status);
   }
   const data = await res.json() as { data: { embedding: number[] }[] };
   // Sort by index to match input order
@@ -143,6 +145,18 @@ export class RagEngine {
     return chunks;
   }
 
+  private async getEmbeddingsWithRetry(inputs: string[]): Promise<number[][]> {
+    const attempts = Math.max(1, config.rag.embeddingRetryAttempts);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await getEmbeddings(inputs, config.rag.embeddingModel);
+      } catch (err) {
+        if ((err instanceof RagError && [401, 403].includes(err.statusCode)) || attempt >= attempts) throw err;
+        await sleep(100 * 2 ** (attempt - 1));
+      }
+    }
+  }
+
   private sentences(text: string): string[] {
     return text.match(/[^.!?]+[.!?]+\s*|[^.!?]+$/g)?.filter(s => s.trim()) ?? [text];
   }
@@ -197,7 +211,9 @@ export class RagEngine {
     this.store.deleteChunksBySource(source);
     this.vectorIndex = null;
     this.vectorIndexChunkCount = -1;
-    const chunks = this.splitIntoChunks(content);
+    const chunks = this.splitIntoChunks(content)
+      .map(chunkText => ({ chunkText, chunkHash: sha256(chunkText) }))
+      .filter((chunk, index, all) => all.findIndex(c => c.chunkHash === chunk.chunkHash) === index);
 
     let hasEmbeddings = false;
     const batchSize = 20;
@@ -205,7 +221,7 @@ export class RagEngine {
       const batch = chunks.slice(i, i + batchSize);
       let embeddings: number[][] | null = null;
       try {
-        embeddings = await getEmbeddings(batch, config.rag.embeddingModel);
+        embeddings = await this.getEmbeddingsWithRetry(batch.map(c => c.chunkText));
         hasEmbeddings = true;
       } catch (err) {
         logger.warn({ err, source, start: i, end: i + batch.length }, '[RagEngine] Error embebiendo lote');
@@ -214,10 +230,10 @@ export class RagEngine {
         this.store.saveChunk({
           source,
           chunkIndex: i + j,
-          chunkText: batch[j],
+          chunkText: batch[j].chunkText,
           embedding: embeddings?.[j] ?? undefined,
           contentHash,
-          chunkHash: sha256(batch[j]),
+          chunkHash: batch[j].chunkHash,
         });
       }
     }
@@ -332,7 +348,7 @@ export class RagEngine {
 
     let queryVec: number[];
     try {
-      const embeddings = await getEmbeddings([query], config.rag.embeddingModel);
+      const embeddings = await this.getEmbeddingsWithRetry([query]);
       queryVec = embeddings[0];
     } catch (err) {
       logger.warn({ err }, '[RagEngine] Error generando embedding de query');

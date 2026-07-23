@@ -45,6 +45,7 @@ export const config = {
     chunkSize: envInt('EMBEDDING_CHUNK_SIZE', 500),
     chunkOverlapChars: envInt('RAG_CHUNK_OVERLAP_CHARS', 100),
     topK: envInt('EMBEDDING_TOP_K', 5),
+    embeddingRetryAttempts: envInt('EMBEDDING_RETRY_ATTEMPTS', 2),
   },
   store: {
     historyLimit: envInt('HISTORY_LIMIT_DEFAULT', 20),

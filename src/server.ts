@@ -102,6 +102,23 @@ app.get('/api/history', (req, res, next) => {
     }
 });
 
+app.get('/api/rag/sources', (req, res, next) => {
+    try {
+        res.json({ sources: store.getRagSources() });
+    } catch (error: unknown) {
+        next(error);
+    }
+});
+
+app.delete('/api/rag/sources/:source', (req, res, next) => {
+    try {
+        store.deleteChunksBySource(req.params.source);
+        res.json({ deleted: true, source: req.params.source });
+    } catch (error: unknown) {
+        next(error);
+    }
+});
+
 app.post('/api/agent/execute', async (req, res, next) => {
     const { task, role, system_prompt, config: agentConfig } = req.body;
 
