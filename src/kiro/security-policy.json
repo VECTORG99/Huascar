@@ -1,32 +1,29 @@
 {
-  "blocked_tool_patterns": ["shell", "sudo", "terminal"],
-  "blocked_args_substrings": {
-    "execute_bash": [
-      "rm -rf",
-      "rm -r",
-      "rm --recursive",
-      "git push --force",
-      "git push -f",
-      "git reset --hard",
-      "git clean -f",
-      "drop table",
-      "drop database",
-      "truncate table",
-      "format",
-      "mkfs",
-      "dd if=",
-      "> /dev/sd",
-      "chmod 777",
-      "curl | sh",
-      "wget | sh",
-      "curl | bash",
-      "wget | bash"
-    ],
-    "*": [
-      "bypass_secret",
-      "BYPASS_SECRET",
-      "--dangerously-force"
+  "version": "2.0.0",
+  "mode": "allowlist",
+  "description": "Allowlist-first policy. Only explicitly permitted operations can execute. Denylist serves as defense-in-depth only.",
+  "allowed_tools": ["read_file", "list_directory", "search_files", "get_file_info"],
+  "allowed_commands": {
+    "description": "Structured allowlist of shell commands.",
+    "entries": [
+      { "binary": "npm", "allowed_args": ["ci", "install", "run build", "run test", "run test:unit", "run lint", "run typecheck", "run format:check", "audit"] },
+      { "binary": "npx", "allowed_args": ["tsc --noEmit", "prettier --check ."] },
+      { "binary": "node", "allowed_args": ["--test", "--import"] },
+      { "binary": "git", "allowed_args": ["status", "log", "diff", "branch", "show", "ls-files", "rev-parse"] },
+      { "binary": "cat", "allowed_args": [] },
+      { "binary": "ls", "allowed_args": [] },
+      { "binary": "pwd", "allowed_args": [] },
+      { "binary": "echo", "allowed_args": [] },
+      { "binary": "head", "allowed_args": [] },
+      { "binary": "tail", "allowed_args": [] },
+      { "binary": "wc", "allowed_args": [] },
+      { "binary": "grep", "allowed_args": [] },
+      { "binary": "find", "allowed_args": [] },
+      { "binary": "which", "allowed_args": [] }
     ]
   },
-  "allowed_tools": []
+  "blocked_tool_patterns": ["sudo", "terminal"],
+  "blocked_args_substrings": {
+    "*": ["bypass_secret", "BYPASS_SECRET", "--dangerously-force", "rm -rf /", "mkfs", "dd if=", "> /dev/sd", "chmod 777", "curl | sh", "wget | sh", "curl | bash", "wget | bash"]
+  }
 }
