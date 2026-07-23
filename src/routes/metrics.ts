@@ -38,14 +38,28 @@ export function metricsRouter(state: MetricsState): Router {
   const router = Router();
   router.get('/metrics', (req, res) => {
     const metricsToken = process.env.METRICS_SECRET;
-    if (process.env.NODE_ENV === 'production' && metricsToken) {
-      const provided = req.headers['x-metrics-token'];
+    // Always require auth when METRICS_SECRET is configured (any environment)
+    if (metricsToken) {
+      const provided = req.headers['x-metrics-token'] || req.query.token;
       if (provided !== metricsToken) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        return res.status(401).json({ error: 'Unauthorized — provide X-Metrics-Token header or ?token= query param' });
       }
+    } else if (process.env.NODE_ENV === 'production') {
+      // In production without METRICS_SECRET, deny all access
+      return res.status(403).json({ error: 'Metrics disabled — METRICS_SECRET not configured' });
     }
     const uptime = Math.floor((Date.now() - state.startTime) / 1000);
-    res.json({ uptime, totalRequests: state.metrics.totalRequests, requestsByPath: state.metrics.requestsByPath, errorsByPath: state.metrics.errorsByPath });
+    // Sanitize: don't expose full path details, only aggregated counts
+    const safeMetrics = {
+      uptime,
+      totalRequests: state.metrics.totalRequests,
+      totalErrors: Object.values(state.metrics.errorsByPath).reduce((a, b) => a + b, 0),
+      topPaths: Object.entries(state.metrics.requestsByPath)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 10)
+        .map(([path, count]) => ({ path, count })),
+    };
+    res.json(safeMetrics);
   });
   return router;
 }
