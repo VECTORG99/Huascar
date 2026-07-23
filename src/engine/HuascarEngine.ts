@@ -227,10 +227,11 @@ export class HuascarEngine {
       }
 
       const ragContext = await this.rag.getContext(task);
-      const systemPrompt = this.activeRole.system_prompt + (ragContext ? '\n\n' + ragContext : '') + mcpContext;
+      const baseSystemPrompt = systemPrompt ?? this.activeRole.system_prompt;
+      const effectiveSystemPrompt = baseSystemPrompt + (ragContext ? '\n\n' + ragContext : '') + mcpContext;
 
       const responseText = !useMock
-        ? await this.runReActLoop(systemPrompt, task)
+        ? await this.runReActLoop(effectiveSystemPrompt, task)
         : this.runMockReActLoop(task);
 
       if (this.store) {
