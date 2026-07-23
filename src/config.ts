@@ -43,6 +43,7 @@ export const config = {
     encoding: envEncoding('FILE_ENCODING', 'utf8'),
     embeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
     chunkSize: envInt('EMBEDDING_CHUNK_SIZE', 500),
+    chunkOverlapChars: envInt('RAG_CHUNK_OVERLAP_CHARS', 100),
     topK: envInt('EMBEDDING_TOP_K', 5),
   },
   store: {

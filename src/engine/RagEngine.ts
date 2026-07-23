@@ -99,34 +99,92 @@ export class RagEngine {
   /** Split text into chunks preserving paragraph/sentence boundaries. */
   private splitIntoChunks(text: string): string[] {
     const maxLen = config.rag.chunkSize;
-    const paragraphs = text.split(/\n\n+/);
+    const overlapChars = config.rag.chunkOverlapChars;
+    const paragraphs = this.withSections(text);
     const chunks: string[] = [];
     let current = '';
+    let currentSection = '';
 
-    for (const para of paragraphs) {
-      if (!para.trim()) continue;
+    const prefixed = (section: string, body: string) => section ? `[section: ${section}]\n${body.trim()}` : body.trim();
+    const push = () => {
+      const chunk = prefixed(currentSection, current);
+      if (chunk && chunks[chunks.length - 1] !== chunk) chunks.push(chunk);
+      current = '';
+    };
+
+    for (const { section, text: para } of paragraphs) {
+      const prefixLen = section ? `[section: ${section}]\n`.length : 0;
+      const bodyMaxLen = Math.max(1, maxLen - prefixLen);
+      if (current && section !== currentSection) push();
+      currentSection = section;
+
       const candidate = current ? current + '\n\n' + para : para;
-      if (candidate.length <= maxLen) {
+      if (candidate.length <= bodyMaxLen) {
         current = candidate;
       } else {
-        if (current) chunks.push(current);
+        if (current) push();
         // Paragraph too long — split by sentence
-        const sentences = para.match(/[^.!?\n]+[.!?]*\s*/g) || [para];
+        const sentences = this.sentences(para);
         let sub = '';
         for (const s of sentences) {
           const subCandidate = sub ? sub + s : s;
-          if (subCandidate.length <= maxLen) {
+          if (subCandidate.length <= bodyMaxLen) {
             sub = subCandidate;
           } else {
-            if (sub) chunks.push(sub);
-            sub = s;
+            if (sub) {
+              current = sub;
+              push();
+              sub = this.overlap(sub, overlapChars) + s;
+            } else {
+              for (let start = 0; start < s.length; start += bodyMaxLen) {
+                current = s.slice(start, start + bodyMaxLen);
+                if (start + bodyMaxLen < s.length) push();
+              }
+              sub = current;
+              current = '';
+            }
           }
         }
         current = sub;
       }
     }
-    if (current) chunks.push(current);
+    if (current) push();
     return chunks;
+  }
+
+  private sentences(text: string): string[] {
+    return text.match(/[^.!?]+[.!?]+\s*|[^.!?]+$/g)?.filter(s => s.trim()) ?? [text];
+  }
+
+  private overlap(text: string, maxChars: number): string {
+    if (maxChars <= 0) return '';
+    const lastSentence = this.sentences(text).at(-1)?.trimStart() ?? '';
+    const overlap = lastSentence.length <= maxChars ? lastSentence : text.slice(-maxChars);
+    return overlap ? overlap.trimEnd() + ' ' : '';
+  }
+
+  private withSections(text: string): { section: string; text: string }[] {
+    const blocks = text.split(/\n\s*\n+/);
+    const out: { section: string; text: string }[] = [];
+    let section = '';
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i].trim();
+      if (!block) continue;
+      const [firstLine = '', ...restLines] = block.split('\n');
+      const rest = restLines.join('\n').trim();
+      const heading = firstLine.match(/^#{1,2}\s+(.+)$/)?.[1] ?? (rest || i < blocks.length - 1 ? this.titleLine(firstLine) : null);
+      if (heading) {
+        section = heading.trim();
+        if (rest) out.push({ section, text: rest });
+        continue;
+      }
+      out.push({ section, text: block });
+    }
+    return out;
+  }
+
+  private titleLine(block: string): string | null {
+    return /^[^\n.!?:]{3,80}$/.test(block) ? block : null;
   }
 
   private wrapSnippet(label: string, text: string): string {

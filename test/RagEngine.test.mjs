@@ -118,4 +118,55 @@ describe('RagEngine', () => {
       cleanupDb(dbPath);
     }
   });
+
+  it('splits long text at sentence boundaries when possible', () => {
+    const originalChunkSize = config.rag.chunkSize;
+    const originalOverlap = config.rag.chunkOverlapChars;
+    config.rag.chunkSize = 70;
+    config.rag.chunkOverlapChars = 0;
+    try {
+      const chunks = new RagEngine().splitIntoChunks(
+        'Alpha sentence stays whole. Beta sentence also stays whole. Gamma sentence closes it.'
+      );
+
+      assert.ok(chunks.length > 1);
+      assert.ok(chunks.slice(0, -1).every(chunk => /[.!?]$/.test(chunk.trim())));
+    } finally {
+      config.rag.chunkSize = originalChunkSize;
+      config.rag.chunkOverlapChars = originalOverlap;
+    }
+  });
+
+  it('adds overlap from the previous chunk', () => {
+    const originalChunkSize = config.rag.chunkSize;
+    const originalOverlap = config.rag.chunkOverlapChars;
+    config.rag.chunkSize = 55;
+    config.rag.chunkOverlapChars = 30;
+    try {
+      const chunks = new RagEngine().splitIntoChunks(
+        'First boundary sentence. Second boundary sentence. Third boundary sentence.'
+      );
+
+      assert.ok(chunks.length > 1);
+      assert.ok(chunks[1].startsWith('Second boundary sentence.'));
+    } finally {
+      config.rag.chunkSize = originalChunkSize;
+      config.rag.chunkOverlapChars = originalOverlap;
+    }
+  });
+
+  it('prefixes chunks with section metadata from headings', () => {
+    const originalChunkSize = config.rag.chunkSize;
+    config.rag.chunkSize = 80;
+    try {
+      const chunks = new RagEngine().splitIntoChunks(
+        '# Install\n\nRun npm install. Then run npm test.\n\n## Deploy\n\nPush development when green.'
+      );
+
+      assert.ok(chunks.some(chunk => chunk.startsWith('[section: Install]\n')));
+      assert.ok(chunks.some(chunk => chunk.startsWith('[section: Deploy]\n')));
+    } finally {
+      config.rag.chunkSize = originalChunkSize;
+    }
+  });
 });
