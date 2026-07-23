@@ -1,50 +1,69 @@
-# Dependencies (installed during build)
+# =============================================================================
+# .dockerignore — Security-hardened exclusions
+# Prevents secrets, tests, docs, and dev artifacts from leaking into image layers
+# =============================================================================
+
+# Environment and secrets (CRITICAL — prevents secret exposure in image layers)
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+id_rsa*
+secrets/
+credentials/
+
+# Dependencies (installed during docker build)
 node_modules
 agent-creator/node_modules
 frontend/node_modules
 
-# Build artifacts
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Test files
+test/
+coverage/
+.nyc_output/
+*.test.*
+*.spec.*
+__tests__/
+__mocks__/
+
+# Documentation (not needed in production image)
+docs/
+*.md
+!README.md
+
+# Build artifacts (rebuilt in container)
 dist
 .next
 out
 
-# Environment and secrets
-.env*
-*.pem
-*.key
-*.cert
-secrets/
-credentials/
-
-# Database
+# Database (runtime data, not build-time)
 data/
 *.db
 *.db-wal
 *.db-shm
-
-# Git
-.git
-.gitignore
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Testing and coverage
-coverage/
-.nyc_output/
-test/
-
-# Documentation (not needed in image)
-docs/
-*.md
-!README.md
+desktop.ini
 
 # CI/CD
 .github/
@@ -52,8 +71,17 @@ docs/
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Misc
 .slim/
 tmp/
 .kiro/
+.husky/
+.editorconfig
+.prettierrc*
+.eslintrc*
+eslint.config.*
+prettier.config.*
+renovate.json
