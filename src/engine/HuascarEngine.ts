@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
 import { RagEngine, RagSource } from './RagEngine.js';
 import { Store } from './Store.js';
+import { logger } from '../logger.js';
 
 interface RagConfig {
   knowledge_bases: RagSource[];
@@ -87,7 +88,7 @@ export class HuascarEngine {
 
   private async connectMcpServers(): Promise<void> {
     if (!fs.existsSync(config.paths.mcps)) {
-      console.log('[HuascarEngine] mcps.json no encontrado, saltando MCP.');
+      logger.info('[HuascarEngine] mcps.json no encontrado, saltando MCP.');
       return;
     }
 
@@ -97,7 +98,7 @@ export class HuascarEngine {
       let transport: StdioClientTransport | undefined;
       let client: Client | undefined;
       try {
-        console.log(`[HuascarEngine] Iniciando MCP server: "${name}" (${serverConfig.command})`);
+        logger.info(`[HuascarEngine] Iniciando MCP server: "${name}" (${serverConfig.command})`);
 
         transport = new StdioClientTransport({
           command: serverConfig.command,
@@ -119,11 +120,11 @@ export class HuascarEngine {
           inputSchema: t.inputSchema,
         }));
 
-        console.log(`[HuascarEngine] MCP "${name}" conectado (${tools.length} herramientas)`);
+        logger.info(`[HuascarEngine] MCP "${name}" conectado (${tools.length} herramientas)`);
 
         this.mcpClients.push({ name, client, transport, tools });
       } catch (err: unknown) {
-        console.error(`[HuascarEngine] Error conectando MCP "${name}": ${err instanceof Error ? err.message : String(err)}`);
+        logger.error(`[HuascarEngine] Error conectando MCP "${name}": ${err instanceof Error ? err.message : String(err)}`);
         // Cleanup zombie MCP processes on timeout/failure
         try { if (transport) await transport.close(); } catch { /* ignore */ }
         try { if (client) client.close(); } catch { /* ignore */ }
@@ -133,19 +134,19 @@ export class HuascarEngine {
 
   private async loadRagSources(): Promise<void> {
     if (!fs.existsSync(config.paths.rag)) {
-      console.log('[HuascarEngine] rag.json no encontrado, saltando RAG.');
+      logger.info('[HuascarEngine] rag.json no encontrado, saltando RAG.');
       return;
     }
     try {
       const ragConfig: RagConfig = JSON.parse(fs.readFileSync(config.paths.rag, config.rag.encoding));
       if (!Array.isArray(ragConfig.knowledge_bases)) {
-        console.warn('[HuascarEngine] knowledge_bases no es un array, saltando RAG.');
+        logger.warn('[HuascarEngine] knowledge_bases no es un array, saltando RAG.');
         return;
       }
       await this.rag.loadSources(ragConfig.knowledge_bases);
-      console.log(`[HuascarEngine] RAG cargado: ${ragConfig.knowledge_bases.length} fuentes`);
+      logger.info(`[HuascarEngine] RAG cargado: ${ragConfig.knowledge_bases.length} fuentes`);
     } catch (err: unknown) {
-      console.warn(`[HuascarEngine] Error cargando RAG: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`[HuascarEngine] Error cargando RAG: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -154,7 +155,7 @@ export class HuascarEngine {
       try {
         await c.client.close();
       } catch (err: unknown) {
-        console.error(`[HuascarEngine] Error cerrando MCP "${c.name}": ${err instanceof Error ? err.message : String(err)}`);
+        logger.error(`[HuascarEngine] Error cerrando MCP "${c.name}": ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     this.mcpClients = [];
@@ -170,9 +171,9 @@ export class HuascarEngine {
     } else {
       this.activeRole = this.steering.roles[this.roleKey];
     }
-    console.log(`\n[HuascarEngine] Iniciando LLM ReAct Loop...`);
-    console.log(`[HuascarEngine] Rol activo: ${this.activeRole.name}`);
-    console.log(`[HuascarEngine] Tarea: ${task}`);
+    logger.info(`\n[HuascarEngine] Iniciando LLM ReAct Loop...`);
+    logger.info(`[HuascarEngine] Rol activo: ${this.activeRole.name}`);
+    logger.info(`[HuascarEngine] Tarea: ${task}`);
 
     try {
       const useMock = config.llm.mockMode || !config.hasApiKey;
@@ -235,7 +236,7 @@ export class HuascarEngine {
         try {
           this.store.saveExecution(this.activeRole.name, task, responseText);
         } catch (err) {
-          console.warn('[HuascarEngine] Error guardando ejecucion:', err);
+          logger.warn({ err }, '[HuascarEngine] Error guardando ejecucion');
         }
       }
 
@@ -256,7 +257,7 @@ export class HuascarEngine {
     ];
 
     for (let i = 0; i < maxIterations; i++) {
-      console.log(`\n[HuascarEngine] ReAct iteracion ${i + 1}/${maxIterations}`);
+      logger.info(`\n[HuascarEngine] ReAct iteracion ${i + 1}/${maxIterations}`);
 
       const { text } = await generateText({
         model: openai(config.llm.modelId),
@@ -264,17 +265,17 @@ export class HuascarEngine {
         prompt: messages[messages.length - 1].content,
       });
 
-      console.log(`[HuascarEngine] Respuesta LLM:\n${text}`);
+      logger.info(`[HuascarEngine] Respuesta LLM:\n${text}`);
 
       const finalMatch = text.match(/FINAL:\s*(.+)/s);
       if (finalMatch) {
-        console.log(`[HuascarEngine] Respuesta final en iteracion ${i + 1}`);
+        logger.info(`[HuascarEngine] Respuesta final en iteracion ${i + 1}`);
         return finalMatch[1].trim();
       }
 
       const toolMatch = text.match(/USE_TOOL:\s*(\S+)/);
       if (!toolMatch) {
-        console.log(`[HuascarEngine] Sin herramienta ni respuesta final, retornando respuesta cruda`);
+        logger.info(`[HuascarEngine] Sin herramienta ni respuesta final, retornando respuesta cruda`);
         return text;
       }
 
@@ -297,12 +298,12 @@ export class HuascarEngine {
           try {
             args = JSON.parse(text.slice(start, end));
           } catch {
-            console.log(`[HuascarEngine] No se pudieron parsear los argumentos JSON para "${toolName}"`);
+            logger.info(`[HuascarEngine] No se pudieron parsear los argumentos JSON para "${toolName}"`);
           }
         }
       }
 
-      console.log(`[HuascarEngine] Llamando herramienta: "${toolName}"`);
+      logger.info(`[HuascarEngine] Llamando herramienta: "${toolName}"`);
 
       // Hook de seguridad: validar herramienta real
       agentHooks.before_action(toolName, args);
@@ -322,7 +323,7 @@ export class HuascarEngine {
             const resultContent = result.content as { type: string; text?: string }[] | undefined;
             if (!resultContent) {
               toolResult = `Error: resultado sin contenido de "${toolName}"`;
-              console.log(`[HuascarEngine] Herramienta "${toolName}" retorno resultado sin contenido`);
+              logger.info(`[HuascarEngine] Herramienta "${toolName}" retorno resultado sin contenido`);
               break;
             }
             toolResult = resultContent
@@ -333,14 +334,14 @@ export class HuascarEngine {
             if (toolResult.length > config.react.toolResultMaxChars) {
               toolResult = toolResult.slice(0, config.react.toolResultMaxChars) + '\n... [truncado]';
             }
-            console.log(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
+            logger.info(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
           } catch (err: unknown) {
             const errMsg = err instanceof Error ? err.message : String(err);
             toolResult = `Error ejecutando "${toolName}": ${errMsg}`;
-            console.error(`[HuascarEngine] Error en herramienta: ${errMsg}`);
+            logger.error(`[HuascarEngine] Error en herramienta: ${errMsg}`);
             // On timeout, kill the MCP transport to release the process
             if (errMsg.includes('timed out')) {
-              console.warn(`[HuascarEngine] Killing MCP "${c.name}" transport after timeout`);
+              logger.warn(`[HuascarEngine] Killing MCP "${c.name}" transport after timeout`);
               try { await c.transport.close(); } catch { /* ignore */ }
             }
           }
@@ -352,7 +353,7 @@ export class HuascarEngine {
       messages.push({ role: 'user', content: `## Resultado de ${toolName}:\n${toolResult}\n\nContinua o responde FINAL: <respuesta>.` });
     }
 
-    console.log(`[HuascarEngine] Maximo de iteraciones (${maxIterations}) alcanzado`);
+    logger.info(`[HuascarEngine] Maximo de iteraciones (${maxIterations}) alcanzado`);
 
     const { text } = await generateText({
       model: openai(config.llm.modelId),
@@ -365,7 +366,7 @@ export class HuascarEngine {
   }
 
   private runMockReActLoop(task: string): string {
-    console.log(`[HuascarEngine] Sin API Key - simulando ReAct Loop...`);
+    logger.info(`[HuascarEngine] Sin API Key - simulando ReAct Loop...`);
 
     const mockSteps = [
       `Paso 1: Evaluando tarea "${task}"...`,

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { logger } from '../logger.js';
 
 interface SecurityPolicy {
   blocked_tool_patterns: string[];
@@ -13,7 +14,7 @@ function loadPolicy(): SecurityPolicy {
   try {
     return JSON.parse(fs.readFileSync(policyPath, 'utf8'));
   } catch (err) {
-    console.error(`[SECURITY] Error cargando politica de seguridad desde ${policyPath}:`, err);
+    logger.error({ err, policyPath }, '[SECURITY] Error cargando politica de seguridad');
     // Fail-closed: block everything if policy can't be loaded
     return {
       blocked_tool_patterns: [''],
@@ -66,7 +67,7 @@ export const agentHooks = {
 
     // Admin bypass — only activated via secure administrative channel, not from tool args
     if (adminBypassActive) {
-      console.log(`[HOOK BYPASS] Administrative bypass active for: ${toolName}`);
+      logger.info(`[HOOK BYPASS] Administrative bypass active for: ${toolName}`);
       return true;
     }
 
@@ -75,14 +76,14 @@ export const agentHooks = {
 
     // Strip any bypass_secret from args to prevent the model from using it
     if ('bypass_secret' in args) {
-      console.warn(`[SECURITY] Model attempted to use bypass_secret in tool args — stripped and ignored`);
+      logger.warn(`[SECURITY] Model attempted to use bypass_secret in tool args — stripped and ignored`);
       delete args.bypass_secret;
     }
 
     // If allowlist mode is active, only explicitly allowed tools can execute
     if (policy.allowed_tools && policy.allowed_tools.length > 0) {
       if (!policy.allowed_tools.includes(toolName)) {
-        console.error(`[HOOK ERROR] Tool "${toolName}" not in allowlist — blocked`);
+        logger.error(`[HOOK ERROR] Tool "${toolName}" not in allowlist — blocked`);
         throw new Error(`HOOK TRIGGERED: Herramienta "${toolName}" no esta en la lista de herramientas permitidas.`);
       }
     }
@@ -90,7 +91,7 @@ export const agentHooks = {
     // Check if tool name matches blocked patterns (case-insensitive)
     for (const pattern of policy.blocked_tool_patterns) {
       if (pattern && toolNameLower.includes(pattern.toLowerCase())) {
-        console.error(`[HOOK ERROR] Herramienta bloqueada por politica de seguridad: ${toolName}`);
+        logger.error(`[HOOK ERROR] Herramienta bloqueada por politica de seguridad: ${toolName}`);
         throw new Error(`HOOK TRIGGERED: Herramienta "${toolName}" bloqueada por politica de seguridad.`);
       }
     }
@@ -104,21 +105,21 @@ export const agentHooks = {
         const serialized = JSON.stringify(args).toLowerCase();
         for (const substr of blockedArgs) {
           if (serialized.includes(substr.toLowerCase())) {
-            console.error(`[HOOK ERROR] Accion destructiva bloqueada en "${toolName}": detected "${substr}"`);
+            logger.error(`[HOOK ERROR] Accion destructiva bloqueada en "${toolName}": detected "${substr}"`);
             throw new Error(`HOOK TRIGGERED: Accion destructiva bloqueada por politica de seguridad.`);
           }
         }
       }
     }
 
-    console.log(`[HOOK SUCCESS] Autorizando accion segura: ${toolName}`);
+    logger.info(`[HOOK SUCCESS] Autorizando accion segura: ${toolName}`);
     return true;
   },
 
   on_commit: async (diffContext: string): Promise<string> => {
     const id = crypto.randomUUID();
     pendingApprovals.set(id, { status: 'pending' });
-    console.log(`[HOOK PAUSE] Esperando aprobacion del desarrollador (id=${id})...`);
+    logger.info(`[HOOK PAUSE] Esperando aprobacion del desarrollador (id=${id})...`);
     try {
       for (let i = 0; i < 30; i++) {
         const record = pendingApprovals.get(id);

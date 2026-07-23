@@ -8,6 +8,7 @@ import { Store } from './engine/Store.js';
 import { resolveApproval, getApprovalStatus } from './kiro/hooks.js';
 import { creatorRouter } from './creator/router.js';
 import { requireAuth } from './middleware/auth.js';
+import { logger, requestLogger } from './logger.js';
 
 const app = express();
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173').split(',').map(o => o.trim());
@@ -50,8 +51,7 @@ app.use((req, res, next) => {
 
   res.on('finish', () => {
     const duration = Date.now() - t0;
-    const line = { t: new Date().toISOString(), reqId, method: req.method, path: req.path, status: res.statusCode, duration, len: res.get('content-length') || 0 };
-    console.log(JSON.stringify(line));
+    requestLogger(reqId).info({ method: req.method, path: req.path, status: res.statusCode, duration, len: res.get('content-length') || 0 }, 'request completed');
     if (res.statusCode >= 400) metrics.errorsByPath[req.path] = (metrics.errorsByPath[req.path] || 0) + 1;
   });
   next();
@@ -166,31 +166,31 @@ app.get('/api/hooks/commit-approval/:id', (req, res, next) => {
 // Centralized error handler
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[ERROR] ${req.method} ${req.path}: ${message}`);
+    logger.error({ err, method: req.method, path: req.path }, message);
     if (!res.headersSent) res.status(500).json({ error: message });
 });
 
 const server = app.listen(config.server.port, config.server.host, () => {
-    console.log(`Huascar Backend corriendo en http://${config.server.host}:${config.server.port}`);
+    logger.info({ host: config.server.host, port: config.server.port }, 'Huascar Backend running');
 });
 
 process.on('uncaughtException', (err) => {
-    console.error(`[FATAL] Excepcion no capturada: ${err.message}`, err.stack?.split('\n').slice(0, 3).join('\n'));
+    logger.fatal({ err }, 'uncaught exception');
     store.close();
     server.close(() => process.exit(1));
 });
 process.on('unhandledRejection', (reason) => {
-    console.error(`[FATAL] Promesa rechazada no capturada: ${reason}`);
+    logger.fatal({ reason }, 'unhandled rejection');
     store.close();
     server.close(() => process.exit(1));
 });
 process.on('SIGTERM', () => {
-    console.log('SIGTERM recibido, cerrando conexiones...');
+    logger.info('SIGTERM received, closing connections');
     store.close();
     server.close(() => process.exit(0));
 });
 process.on('SIGINT', () => {
-    console.log('SIGINT recibido, cerrando conexiones...');
+    logger.info('SIGINT received, closing connections');
     store.close();
     server.close(() => process.exit(0));
 });

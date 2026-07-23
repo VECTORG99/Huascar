@@ -3,6 +3,7 @@ import path from 'path';
 import { URL } from 'url';
 import { config } from '../config.js';
 import { Store } from './Store.js';
+import { logger } from '../logger.js';
 
 // ponytail: blocklist-based SSRF prevention. Upgrade to DNS-resolution check if deployed publicly.
 const BLOCKED_HOSTS = [
@@ -143,7 +144,7 @@ export class RagEngine {
         embeddings = await getEmbeddings(batch, config.rag.embeddingModel);
         hasEmbeddings = true;
       } catch (err) {
-        console.warn(`[RagEngine] Error embebiendo lote ${i}-${i + batch.length} de ${source}:`, err instanceof Error ? err.message : String(err));
+        logger.warn({ err, source, start: i, end: i + batch.length }, '[RagEngine] Error embebiendo lote');
       }
       for (let j = 0; j < batch.length; j++) {
         this.store.saveChunk({
@@ -154,13 +155,13 @@ export class RagEngine {
         });
       }
     }
-    console.log(`[RagEngine] Indexados ${chunks.length} chunks para "${source}"${hasEmbeddings ? ' con embeddings' : ' sin embeddings'}`);
+    logger.info(`[RagEngine] Indexados ${chunks.length} chunks para "${source}"${hasEmbeddings ? ' con embeddings' : ' sin embeddings'}`);
   }
 
   /** Load documents from sources, chunk, store, and embed. */
   async loadSources(sources: RagSource[]): Promise<void> {
     if (this.loadedContent.length > 0) {
-      console.warn(`[RagEngine] Reemplazando ${this.loadedContent.length} fuentes cargadas anteriormente.`);
+      logger.warn(`[RagEngine] Reemplazando ${this.loadedContent.length} fuentes cargadas anteriormente.`);
     }
     this.sources = sources;
     this.loadedContent = [];
@@ -170,7 +171,7 @@ export class RagEngine {
         switch (source.type) {
           case 'local_file': {
             if (!isPathSafe(source.path)) {
-              console.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
+              logger.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
               break;
             }
             const resolved = path.resolve(source.path);
@@ -181,7 +182,7 @@ export class RagEngine {
           }
           case 'local_directory': {
             if (!isPathSafe(source.path)) {
-              console.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
+              logger.warn(`[RagEngine] Path traversal bloqueado: ${source.path}`);
               break;
             }
             const resolved = path.resolve(source.path);
@@ -195,7 +196,7 @@ export class RagEngine {
                 this.loadedContent.push(this.wrapSnippet(label, content));
                 await this.indexChunks(label, this.splitIntoChunks(content));
               } catch (err: unknown) {
-                console.warn(`[RagEngine] Error leyendo ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+                logger.warn(`[RagEngine] Error leyendo ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
               }
             }
             break;
@@ -207,11 +208,11 @@ export class RagEngine {
           }
           case 'web_url': {
             if (!source.url) {
-              console.warn(`[RagEngine] web_url source sin URL, saltando.`);
+              logger.warn(`[RagEngine] web_url source sin URL, saltando.`);
               break;
             }
             if (isBlockedUrl(source.url)) {
-              console.warn(`[RagEngine] URL bloqueada por seguridad: ${source.url}`);
+              logger.warn(`[RagEngine] URL bloqueada por seguridad: ${source.url}`);
               break;
             }
             let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -220,12 +221,12 @@ export class RagEngine {
               timeout = setTimeout(() => abort.abort(), 10000);
               const response = await fetch(source.url, { signal: abort.signal, redirect: 'error' });
               if (!response.ok) {
-                console.warn(`[RagEngine] Error fetching ${source.url}: HTTP ${response.status}`);
+                logger.warn(`[RagEngine] Error fetching ${source.url}: HTTP ${response.status}`);
                 break;
               }
               const contentLen = response.headers.get('content-length');
               if (contentLen && parseInt(contentLen, 10) > 512 * 1024) {
-                console.warn(`[RagEngine] URL ${source.url} demasiado grande (${contentLen} bytes), saltando.`);
+                logger.warn(`[RagEngine] URL ${source.url} demasiado grande (${contentLen} bytes), saltando.`);
                 break;
               }
               const html = await response.text();
@@ -248,13 +249,13 @@ export class RagEngine {
             break;
           }
           default: {
-            console.warn(`[RagEngine] Tipo de fuente desconocido: ${(source as any).type}`);
+            logger.warn(`[RagEngine] Tipo de fuente desconocido: ${(source as any).type}`);
             break;
           }
         }
       } catch (err: unknown) {
         const extra = source.type === 'web_url' ? ` (${(source as { url: string }).url})` : '';
-        console.warn(`[RagEngine] Error procesando fuente ${source.type}${extra}: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(`[RagEngine] Error procesando fuente ${source.type}${extra}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -268,7 +269,7 @@ export class RagEngine {
       const embeddings = await getEmbeddings([query], config.rag.embeddingModel);
       queryVec = embeddings[0];
     } catch (err) {
-      console.warn('[RagEngine] Error generando embedding de query:', err instanceof Error ? err.message : String(err));
+      logger.warn({ err }, '[RagEngine] Error generando embedding de query');
       return [];
     }
 
@@ -295,7 +296,7 @@ export class RagEngine {
         const context = results
           .map(r => `[relevancia: ${(r.score * 100).toFixed(0)}%]\n${r.text}`)
           .join('\n\n---\n\n');
-        console.log(`[RagEngine] Busqueda semantica: ${results.length} resultados para query "${query.slice(0, 60)}..."`);
+        logger.info(`[RagEngine] Busqueda semantica: ${results.length} resultados para query "${query.slice(0, 60)}..."`);
         return `## Contexto RAG (busqueda semantica):\n\n${context}`;
       }
     }

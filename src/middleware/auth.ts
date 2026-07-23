@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { logger } from '../logger.js';
 
 /**
  * Authentication middleware for the Huascar API.
@@ -49,7 +50,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   // If no API keys are configured, warn and pass through (misconfiguration)
   if (API_KEYS.size === 0) {
-    console.warn('[AUTH] AUTH_REQUIRED=true but no HUASCAR_API_KEYS configured — allowing request');
+    logger.warn('AUTH_REQUIRED=true but no HUASCAR_API_KEYS configured — allowing request');
     next();
     return;
   }
