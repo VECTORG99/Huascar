@@ -32,6 +32,22 @@ export interface RagSourceSummary {
   chunk_hashes: string[];
 }
 
+export interface SessionRecord {
+  id: string;
+  role: string;
+  created_at: number;
+  last_active_at: number;
+  metadata: string | null;
+}
+
+export interface SessionMessageRecord {
+  id: number;
+  session_id: string;
+  role: string;
+  content: string;
+  created_at: number;
+}
+
 export class Store {
   private db: Database.Database;
   private dbPath: string;
@@ -66,6 +82,41 @@ export class Store {
       'SELECT * FROM executions ORDER BY created_at DESC LIMIT ?'
     );
     return stmt.all(limit) as ExecutionRecord[];
+  }
+
+  // --- Agent sessions ---
+
+  createSession(id: string, role: string, now = Date.now(), metadata?: string | null): SessionRecord {
+    this.db.prepare('INSERT INTO sessions (id, role, created_at, last_active_at, metadata) VALUES (?, ?, ?, ?, ?)')
+      .run(id, role, now, now, metadata ?? null);
+    return { id, role, created_at: now, last_active_at: now, metadata: metadata ?? null };
+  }
+
+  getSession(id: string): SessionRecord | null {
+    return (this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRecord | undefined) ?? null;
+  }
+
+  touchSession(id: string, now = Date.now()): void {
+    this.db.prepare('UPDATE sessions SET last_active_at = ? WHERE id = ?').run(now, id);
+  }
+
+  addSessionMessage(sessionId: string, role: string, content: string, now = Date.now()): void {
+    this.db.prepare('INSERT INTO session_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)')
+      .run(sessionId, role, content, now);
+  }
+
+  listSessionMessages(sessionId: string, limit = config.sessions.maxMessages): SessionMessageRecord[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM session_messages
+      WHERE session_id = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    `).all(sessionId, limit) as SessionMessageRecord[];
+    return rows.reverse();
+  }
+
+  deleteExpiredSessions(ttlMs = config.sessions.ttlMs, now = Date.now()): number {
+    return this.db.prepare('DELETE FROM sessions WHERE last_active_at < ?').run(now - ttlMs).changes;
   }
 
   // --- Vector RAG ---

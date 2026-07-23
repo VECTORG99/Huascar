@@ -70,6 +70,24 @@ describe('Store', () => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   });
 
+  it('creates sessions and orders messages oldest first', () => {
+    const session = store.createSession('s1', 'role', 1000, '{"a":1}');
+    assert.deepStrictEqual(session, { id: 's1', role: 'role', created_at: 1000, last_active_at: 1000, metadata: '{"a":1}' });
+    store.addSessionMessage('s1', 'user', 'one', 1001);
+    store.addSessionMessage('s1', 'assistant', 'two', 1002);
+
+    assert.strictEqual(store.getSession('s1').role, 'role');
+    assert.deepStrictEqual(store.listSessionMessages('s1').map(m => [m.role, m.content]), [['user', 'one'], ['assistant', 'two']]);
+  });
+
+  it('touches and deletes expired sessions', () => {
+    store.createSession('old-session', 'role', 1);
+    store.touchSession('old-session', 2);
+    assert.strictEqual(store.getSession('old-session').last_active_at, 2);
+    assert.strictEqual(store.deleteExpiredSessions(10, 13), 1);
+    assert.strictEqual(store.getSession('old-session'), null);
+  });
+
   it('lists and deletes RAG sources', () => {
     store.saveChunk({ source: 'a', chunkIndex: 0, chunkText: 'one', contentHash: 'content-a', chunkHash: 'hash-1' });
     store.saveChunk({ source: 'a', chunkIndex: 1, chunkText: 'two', contentHash: 'content-a', chunkHash: 'hash-2' });

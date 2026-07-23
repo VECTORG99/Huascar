@@ -50,6 +50,10 @@ export const config = {
   store: {
     historyLimit: envInt('HISTORY_LIMIT_DEFAULT', 20),
   },
+  sessions: {
+    ttlMs: envInt('SESSION_TTL_MS', 60 * 60 * 1000),
+    maxMessages: envInt('SESSION_MAX_MESSAGES', 10),
+  },
   llm: {
     providerChain: process.env.LLM_PROVIDER_CHAIN || 'openai',
     modelId: process.env.MODEL_ID || 'gpt-4o',

@@ -149,7 +149,7 @@ export class HuascarEngine {
     this.mcpClients = [];
   }
 
-  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig) {
+  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '') {
     if (!this.steering.roles[this.roleKey]) {
       if (systemPrompt) {
         this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
@@ -188,13 +188,14 @@ export class HuascarEngine {
 
       }
 
-      const ragContext = await this.rag.getContext(task);
+      const effectiveTask = sessionContext ? `${sessionContext}\n\nTarea actual:\n${task}` : task;
+      const ragContext = await this.rag.getContext(effectiveTask);
       const baseSystemPrompt = systemPrompt ?? this.activeRole.system_prompt;
       const effectiveSystemPrompt = baseSystemPrompt + (ragContext ? '\n\n' + ragContext : '');
 
       const responseText = !useMock
-        ? await this.runReActLoop(effectiveSystemPrompt, task)
-        : this.runMockReActLoop(task);
+        ? await this.runReActLoop(effectiveSystemPrompt, effectiveTask)
+        : this.runMockReActLoop(effectiveTask);
 
       if (this.store) {
         try {
