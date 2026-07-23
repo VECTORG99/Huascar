@@ -114,11 +114,33 @@ async function defaultConnectMcpServer(name: string, serverConfig: McpServerConf
   }
 }
 
+// Allowlist of env vars that can be interpolated into MCP process environments.
+// Prevents exfiltration of secrets like OPENAI_API_KEY, JWT_SECRET, AWS_* etc.
+const ALLOWED_MCP_ENV_VARS = new Set([
+  'GITHUB_TOKEN',
+  'GITHUB_PERSONAL_ACCESS_TOKEN',
+  'MCP_SERVER_PORT',
+  'NODE_ENV',
+  'PATH',
+  'HOME',
+  'USER',
+  'LANG',
+  'TERM',
+  // Config-driven: extend via MCP_ALLOWED_ENV_VARS=VAR1,VAR2
+  ...(process.env.MCP_ALLOWED_ENV_VARS?.split(',').map(v => v.trim()).filter(Boolean) || []),
+]);
+
 function resolveEnv(env?: Record<string, string>): Record<string, string> | undefined {
   if (!env) return undefined;
   const resolved: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    resolved[key] = value.replace(/\$\{(\w+)\}/g, (_, name: string) => process.env[name] || '');
+    resolved[key] = value.replace(/\$\{(\w+)\}/g, (_, name: string) => {
+      if (!ALLOWED_MCP_ENV_VARS.has(name)) {
+        logger.warn({ var: name }, '[SECURITY] Blocked env var interpolation in MCP config');
+        return '';
+      }
+      return process.env[name] || '';
+    });
   }
   return resolved;
 }
