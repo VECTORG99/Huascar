@@ -75,6 +75,37 @@ describe('HuascarEngine', () => {
     config.hasApiKey = previousHasApiKey;
   });
 
+  it('uses injected dependencies instead of filesystem/API', async () => {
+    const { config } = await import('../src/config.js');
+    const previousMock = config.llm.mockMode;
+    const previousHasApiKey = config.hasApiKey;
+    config.llm.mockMode = false;
+    config.hasApiKey = true;
+
+    let mcpCalled = false;
+    let llmCalled = false;
+    const engine = new HuascarEngine('PR_REVIEWER', {
+      readFile: () => JSON.stringify({
+        roles: { PR_REVIEWER: { name: 'Injected Reviewer', system_prompt: 'Review', temperature: 0.3 } },
+      }),
+      exists: () => false,
+      rag: { getContext: async () => '', loadSources: async () => {} },
+      mcpPool: { getConnections: async () => { mcpCalled = true; return []; } },
+      generateTextWithFallback: async () => { llmCalled = true; return { text: 'injected response' }; },
+    });
+
+    const result = await engine.executeTask('test');
+
+    assert.strictEqual(result.status, 'success');
+    assert.strictEqual(result.agent_role, 'Injected Reviewer');
+    assert.strictEqual(result.response, 'injected response');
+    assert.strictEqual(mcpCalled, true);
+    assert.strictEqual(llmCalled, true);
+
+    config.llm.mockMode = previousMock;
+    config.hasApiKey = previousHasApiKey;
+  });
+
   it('builds structured AI tools that call hooks and MCP with object args', async () => {
     const calls = [];
     const aiTools = buildAiTools([
