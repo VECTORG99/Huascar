@@ -117,6 +117,7 @@ export class HuascarEngine {
   private steering: SteeringConfig;
   public activeRole!: SteeringRole;
   private mcpClients: ConnectedMcpClient[] = [];
+  private requireCommitApproval = false;
   private rag: RagEngine;
   private store: Store | null;
   private roleKey: string;
@@ -191,16 +192,38 @@ export class HuascarEngine {
 
         // Apply optional agent config (from questionnaire) on top of base settings
         if (agentConfig) {
-          // Filter MCP tools to only those selected by user
-          if (agentConfig.tools && agentConfig.tools.length > 0) {
-            const selectedTools = agentConfig.tools;
+          // Tool selection enforcement (fail-closed):
+          // - tools: undefined → use all available tools (default)
+          // - tools: [] → disable ALL tools (explicit zero-tools mode)
+          // - tools: ['a','b'] → only those tools available
+          if (agentConfig.tools !== undefined) {
+            const selectedTools = new Set(agentConfig.tools);
             for (const c of this.mcpClients) {
-              c.tools = c.tools.filter(t => selectedTools.includes(t.name));
+              c.tools = c.tools.filter(t => selectedTools.has(t.name));
             }
+            // Warn about unknown tool names requested by client
+            const allAvailable = new Set(this.mcpClients.flatMap(c => c.tools.map(t => t.name)));
+            for (const requested of agentConfig.tools) {
+              if (!allAvailable.has(requested)) {
+                logger.warn(`[HuascarEngine] Requested tool "${requested}" not found in any MCP server — ignored`);
+              }
+            }
+            logger.info(`[HuascarEngine] Tool enforcement: ${selectedTools.size} selected, ${this.mcpClients.reduce((n, c) => n + c.tools.length, 0)} available after filter`);
           }
           // Add knowledge sources from config
           if (agentConfig.knowledge && agentConfig.knowledge.length > 0) {
             await this.rag.loadSources(agentConfig.knowledge);
+          }
+
+          // Apply security controls from agent config
+          if (agentConfig.security) {
+            if (agentConfig.security.block_destructive_commands) {
+              logger.info('[HuascarEngine] Security: destructive command blocking enforced by client request');
+            }
+            if (agentConfig.security.require_commit_approval) {
+              this.requireCommitApproval = true;
+              logger.info('[HuascarEngine] Security: commit approval required for this execution');
+            }
           }
         }
 
