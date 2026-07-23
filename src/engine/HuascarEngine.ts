@@ -9,6 +9,7 @@ import { EngineError, ErrorCodes } from '../errors.js';
 import { ConnectedMcpClient, mcpConnectionPool } from './McpConnectionPool.js';
 import type { JSONSchema7 } from 'json-schema';
 import { generateTextWithFallback } from './LlmProvider.js';
+import { runMockScenario } from './MockProvider.js';
 
 interface RagConfig {
   knowledge_bases: RagSource[];
@@ -163,7 +164,7 @@ export class HuascarEngine {
     this.mcpClients = [];
   }
 
-  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '') {
+  async executeTask(task: string, systemPrompt?: string, agentConfig?: AgentConfig, sessionContext = '', mockScenario?: string) {
     const registeredRole = registeredSteeringRole(agentConfig?.steering, this.roleKey);
     if (registeredRole) {
       this.activeRole = registeredRole;
@@ -212,7 +213,7 @@ export class HuascarEngine {
 
       const responseText = !useMock
         ? await this.runReActLoop(effectiveSystemPrompt, effectiveTask)
-        : this.runMockReActLoop(effectiveTask);
+        : await this.runMockReActLoop(effectiveTask, mockScenario);
 
       if (this.store) {
         try {
@@ -245,25 +246,8 @@ export class HuascarEngine {
     return text;
   }
 
-  private runMockReActLoop(task: string): string {
+  private runMockReActLoop(task: string, scenario?: string): Promise<string> {
     logger.info(`[HuascarEngine] Sin API Key - simulando ReAct Loop...`);
-
-    const mockSteps = [
-      `Paso 1: Evaluando tarea "${task}"...`,
-      `  -> Se analizo la estructura del proyecto`,
-      `  -> No se detectaron comandos destructivos`,
-      `Paso 2: Herramientas disponibles verificadas`,
-      `  -> MCP no disponible en modo simulado`,
-      `Paso 3: Sintesis de resultados`,
-    ];
-
-    return [
-      `[SIMULADO] ReAct completado para: "${task}"`,
-      ``,
-      ...mockSteps,
-      ``,
-      `Conclusion: La tarea fue procesada correctamente en modo simulado.`,
-      `Para ejecucion real, configura OPENAI_API_KEY en el entorno.`,
-    ].join('\n');
+    return runMockScenario({ task, scenario, readFile: this.deps.readFile });
   }
 }

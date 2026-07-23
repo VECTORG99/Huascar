@@ -57,6 +57,8 @@ All environment variables are defined in `.env.example`. Variables are grouped b
 | `OPENAI_API_KEY` | **Yes** | — | OpenAI API key for LLM calls |
 | `MODEL_ID` | No | `gpt-4o` | Model identifier to use |
 | `LLM_MOCK_MODE` | No | `false` | Skip real LLM calls (for testing) |
+| `MOCK_SCENARIO` | No | `happy_path` | Default mock scenario to execute (`happy_path`, `multi_step`, `blocked`, `timeout`, `error`) |
+| `MOCK_SCENARIOS_PATH` | No | — | Path to custom scenarios JSON file |
 
 ### ReAct Loop
 

@@ -80,8 +80,10 @@ function defaultRole(agent: AgentRecord, config: Record<string, unknown>) {
 function executeBody(body: Record<string, unknown>, agent: AgentRecord) {
   const task = body.task;
   const session_id = body.session_id;
+  const mock_scenario = body.mock_scenario;
   if (typeof task !== 'string' || !task || task.length > 10000) throw bad('task debe ser un texto de maximo 10000 caracteres');
   if (session_id !== undefined && (typeof session_id !== 'string' || session_id.length > 200)) throw bad('session_id debe ser un texto de maximo 200 caracteres');
+  if (mock_scenario !== undefined && (typeof mock_scenario !== 'string' || mock_scenario.length > 200)) throw bad('mock_scenario debe ser un texto de maximo 200 caracteres');
   if (body.system_prompt !== undefined) throw bad('system_prompt no puede sobrescribir el steering registrado');
   const config = validateConfig(JSON.parse(agent.config));
   const defaults = defaultRole(agent, config);
@@ -89,7 +91,7 @@ function executeBody(body: Record<string, unknown>, agent: AgentRecord) {
   const selected = typeof body.role === 'string' ? roles.find(item => item.role === body.role) : defaults;
   if (!selected) throw bad('role no existe en el steering registrado');
   const { role, system_prompt } = selected;
-  return { task, session_id, role, system_prompt, config };
+  return { task, session_id, role, system_prompt, config, mock_scenario };
 }
 
 export function agentsRouter(store: Store, Engine: EngineClass = HuascarEngine): Router {
@@ -120,12 +122,12 @@ export function agentsRouter(store: Store, Engine: EngineClass = HuascarEngine):
     try {
       const agent = store.getAgent(req.params.id);
       if (!agent) throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'agent no encontrado', 404);
-      const { task, role, system_prompt, config, session_id } = executeBody(req.body, agent);
+      const { task, role, system_prompt, config, session_id, mock_scenario } = executeBody(req.body, agent);
       const sessions = new SessionManager(store);
       const session = sessions.getOrCreate(session_id, `${agent.id}:${role}`);
       const sessionContext = sessions.recentContext(session.id);
       store.addSessionMessage(session.id, 'user', task);
-      const result = await new Engine(role, store).executeTask(task, system_prompt, config, sessionContext);
+      const result = await new Engine(role, store).executeTask(task, system_prompt, config, sessionContext, mock_scenario);
       store.addSessionMessage(session.id, 'assistant', result.response ?? result.error ?? result.status);
       store.recordAgentExecution(agent.id);
       res.json({ ...result, session_id: session.id, agent_id: agent.id });

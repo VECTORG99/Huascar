@@ -33,6 +33,7 @@ export const config = {
     mcps: process.env.MCPS_CONFIG_PATH || path.resolve('./src/kiro/mcps.json'),
     rag: process.env.RAG_CONFIG_PATH || path.resolve('./src/kiro/rag.json'),
     db: process.env.HUASCAR_DB_PATH || path.resolve('./data/huascar.db'),
+    mockScenarios: process.env.MOCK_SCENARIOS_PATH || '',
   },
   server: {
     port: envInt('PORT', 3001),
@@ -75,6 +76,7 @@ export const config = {
     localBaseUrl: process.env.LOCAL_BASE_URL || 'http://localhost:11434/v1',
     localApiKey: process.env.LOCAL_API_KEY || 'local',
     mockMode: process.env.LLM_MOCK_MODE === 'true',
+    mockScenario: process.env.MOCK_SCENARIO || 'happy_path',
     retryMax: envInt('LLM_RETRY_MAX', 3),
     retryDelayMs: envInt('LLM_RETRY_DELAY_MS', 1000),
     retryMaxDelayMs: envInt('LLM_RETRY_MAX_DELAY_MS', 30000),

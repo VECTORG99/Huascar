@@ -200,7 +200,19 @@ LLM produce USE_TOOL: execute_bash + args
 
 ### Mock mode
 
-Sin `OPENAI_API_KEY` y con `LLM_MOCK_MODE=false`, el motor ejecuta un ReAct simulado que retorna pasos predefinidos. Esto permite desarrollo y tests sin conexion a LLM.
+Sin `OPENAI_API_KEY` o con `LLM_MOCK_MODE=true`, el motor ejecuta un ReAct simulado (mock mode) que permite desarrollo y tests reproducibles sin consumir tokens reales. El comportamiento se puede configurar usando escenarios deterministas:
+
+1. **Escenarios Integrados (Built-in)**:
+   - `happy_path` (default): Simula un análisis rápido y completa con éxito.
+   - `multi_step`: Simula 3 iteraciones secuenciales simulando pensamientos intermedios.
+   - `blocked`: Intenta ejecutar una herramienta prohibida (ej. `execute_bash` con `rm -rf`) para verificar que las políticas de seguridad (security hooks) bloquean la acción.
+   - `timeout`: Simula retraso de latencia y un posterior error de timeout.
+   - `error`: Provoca un error inmediato del proveedor LLM simulado.
+
+2. **Configuración**:
+   - Por request: Se puede pasar `"mock_scenario"` en el JSON body del endpoint `/api/agent/execute` o `/api/agents/:id/execute`.
+   - Por entorno: `MOCK_SCENARIO` define el escenario por defecto.
+   - Personalizados: Se pueden declarar en un archivo JSON externo indicando su ruta con `MOCK_SCENARIOS_PATH`. El archivo debe estructurarse con la lista de pasos (`steps`) conteniendo `type`, `text`, `tool`, `args`, `delay_ms`, etc.
 
 ---
 

@@ -39,8 +39,16 @@ describe('HuascarEngine', () => {
     const engine = new HuascarEngine('PR_REVIEWER');
     const result = await engine.executeTask('test task');
     assert.strictEqual(result.status, 'success');
-    assert.ok(result.response.includes('SIMULADO'));
+    assert.ok(result.response.includes('[MOCK:happy_path]'));
     assert.strictEqual(result.agent_role, 'Senior Code Reviewer');
+  });
+
+  it('uses explicit mock scenario over env default', async () => {
+    const engine = new HuascarEngine('PR_REVIEWER');
+    const result = await engine.executeTask('test task', undefined, undefined, '', 'multi_step');
+    assert.strictEqual(result.status, 'success');
+    assert.match(result.response, /\[MOCK:multi_step\]/);
+    assert.match(result.response, /completed after multiple steps/);
   });
 
   it('returns blocked status on error', async () => {

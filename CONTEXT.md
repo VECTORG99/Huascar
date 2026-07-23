@@ -9,7 +9,7 @@ Updated: 2026-07-23
 - Persistent state uses SQLite through `better-sqlite3` in `src/engine/Store.ts`; database path defaults to `./data/huascar.db` via `HUASCAR_DB_PATH`.
 - SQLite retention cleanup is bounded by `RETENTION_EXECUTION_MAX_AGE_DAYS`, `RETENTION_EXECUTION_MAX_COUNT`, and `RETENTION_RAG_CHUNKS_MAX_PER_SOURCE`; `RETENTION_CLEANUP_ON_START=false` by default.
 - Migrations are code-based and run at `Store` construction: `001_create_executions`, `002_create_rag_documents`, `003_add_rag_hashes`, `004_create_sessions`, `005_create_agents`.
-- Agent execution is centralized in `src/engine/HuascarEngine.ts`: steering role resolution, MCP tool wrapping, RAG loading/context, AI SDK provider fallback, and execution history persistence.
+- Agent execution is centralized in `src/engine/HuascarEngine.ts`: steering role resolution, MCP tool wrapping, RAG loading/context, AI SDK provider fallback, and execution history persistence. Mock mode supports scenario-based mock executions (`happy_path`, `multi_step`, `blocked`, `timeout`, `error`) configurable via request body, env variables, or custom JSON.
 - Current default steering roles are `PR_REVIEWER`, `SCAFFOLDER`, `TESTER`, `DOCUMENTER`, `REFACTORER`, `DEBUGGER`, and `DEVOPS` in `src/kiro/steering.json`; `STEERING_CONFIG_PATH` can point at an external JSON file.
 - Auth is environment-driven in `src/middleware/auth.ts`: `AUTH_REQUIRED=false` by default; `AUTH_REQUIRED=true` requires `HUASCAR_API_KEYS` through `Authorization: Bearer` or `X-API-Key`.
 
