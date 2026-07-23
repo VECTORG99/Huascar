@@ -102,12 +102,20 @@ export class Store {
     createdAt ? stmt.run(role, task, response, createdAt) : stmt.run(role, task, response);
   }
 
-  getHistory(limit: number = config.store.historyLimit): ExecutionRecord[] {
+  getHistory(limit: number = config.store.historyLimit, offset: number = 0): ExecutionRecord[] {
     this.assertOpen();
+    const boundedLimit = Math.min(Math.max(1, limit), 100); // Cap at 100
+    const boundedOffset = Math.max(0, offset);
     const stmt = this.db.prepare(
-      'SELECT * FROM executions ORDER BY created_at DESC LIMIT ?'
+      'SELECT * FROM executions ORDER BY created_at DESC LIMIT ? OFFSET ?'
     );
-    return stmt.all(limit) as ExecutionRecord[];
+    return stmt.all(boundedLimit, boundedOffset) as ExecutionRecord[];
+  }
+
+  getHistoryCount(): number {
+    this.assertOpen();
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM executions');
+    return (stmt.get() as { count: number }).count;
   }
 
   // --- Registered agents ---
