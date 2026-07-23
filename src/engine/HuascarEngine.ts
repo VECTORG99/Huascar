@@ -4,7 +4,7 @@ import { agentHooks } from '../kiro/hooks.js';
 import { generateText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { Client } from '@modelcontextprotocol/sdk/client';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { RagEngine, RagSource } from './RagEngine.js';
 import { Store } from './Store.js';
 

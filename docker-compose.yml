@@ -34,8 +34,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: ../Dockerfile.frontend
+      context: .
+      dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_URL: http://backend:3001
     ports:

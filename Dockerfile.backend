@@ -1,19 +1,21 @@
 # Stage 1: Builder — install all deps + compile TypeScript
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npx tsc
 
 # Stage 2: Deps — production-only node_modules
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
 # Stage 3: Runner — production image
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 RUN apk add --no-cache wget
 RUN addgroup -S huascar && adduser -S huascar -G huascar
@@ -21,6 +23,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/src/kiro ./src/kiro
 RUN mkdir -p /data /app/data && chown -R huascar:huascar /data /app/data
 USER huascar
 EXPOSE 3001

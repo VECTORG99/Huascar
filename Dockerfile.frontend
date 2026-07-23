@@ -1,30 +1,37 @@
-# Stage 1: Install dependencies
-FROM node:20-alpine AS deps
+# Build context must be the repo root (monorepo workspaces).
+# Stage 1: Install all workspace dependencies
+FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+COPY frontend/package.json ./frontend/package.json
+COPY packages/types/package.json ./packages/types/package.json
+RUN npm ci --ignore-scripts
 
-# Stage 2: Build the Next.js app (NEXT_PUBLIC_API_URL must be passed as --build-arg)
-FROM node:20-alpine AS builder
+# Stage 2: Build @huascar/types, then the Next.js app
+FROM node:22-alpine AS builder
 WORKDIR /app
+COPY package.json package-lock.json ./
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY packages/types ./packages/types
+COPY frontend ./frontend
+RUN npm run build --workspace=@huascar/types
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-RUN npm run build
+RUN npm run build --workspace=@huascar/frontend
 
 # Stage 3: Production runner — Next.js standalone
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 RUN addgroup -S huascar && adduser -S huascar -G huascar
 WORKDIR /app
 ENV NODE_ENV=production
 
 # Copy the standalone server bundle (includes server.js at root + inlined node_modules)
-COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/frontend/.next/standalone/frontend ./
+COPY --from=builder /app/frontend/.next/standalone/node_modules ./node_modules
 # Copy static files server.js expects at ./.next/static
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/frontend/.next/static ./.next/static
 # Copy public assets
-COPY --from=builder /app/public ./public
+COPY --from=builder /app/frontend/public ./public
 
 USER huascar
 EXPOSE 3000
