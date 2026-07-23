@@ -215,13 +215,31 @@ export function SpaceSimulation() {
       const diskBrightness = 0.75 + energy * 0.55;
       const t = performance.now() * 0.00035;
 
+      // Orbital perspective driven by scroll: as the user scrolls down it
+      // feels like we are orbiting around the black hole and swinging
+      // closer to it, then pulling back — the disk tilts toward face-on,
+      // rotates its viewing angle, and breathes in scale, all as a
+      // continuous periodic function of scroll depth (never runs out).
+      const orbitPhase = scrollY * 0.0022;
+      const orbitTilt = DISK_TILT + Math.sin(orbitPhase) * 0.22;
+      const orbitScale = 1 + Math.sin(orbitPhase * 0.85 + 1.1) * 0.16;
+      const orbitRotation = Math.sin(orbitPhase * 0.6) * 0.35;
+      const orbitProximity = (Math.sin(orbitPhase + Math.PI / 2) + 1) / 2; // 0..1, 1 = closest pass
+      const orbitBrightness = diskBrightness * (0.82 + orbitProximity * 0.5);
+
       // Draw the primary disk as a set of concentric orbits sampled densely
       // enough to read as a continuous glowing band rather than particles.
       // Layers go from wide/dim (outer disk) to narrow/bright (inner edge),
       // each with its own Doppler-beamed brightness per sample.
       const radiusRatios = [2.6, 2.1, 1.7, 1.35, 1.08];
       for (const ratio of radiusRatios) {
-        const samples = sampleDisk(well, ratio, DISK_TILT, t, DISK_SAMPLES);
+        const samples = sampleDisk(
+          well,
+          ratio * orbitScale,
+          orbitTilt,
+          t + orbitRotation,
+          DISK_SAMPLES
+        );
         for (let i = 0; i < samples.length; i++) {
           const s = samples[i];
           const next = samples[(i + 1) % samples.length];
@@ -230,7 +248,7 @@ export function SpaceSimulation() {
           // shadow disc (both endpoints within the event horizon radius on
           // the far/lower side get hidden by the black silhouette drawn
           // after this pass anyway, but skipping keeps blend modes clean).
-          const op = clampOpacity(s.brightness * diskBrightness * 0.55);
+          const op = clampOpacity(s.brightness * orbitBrightness * 0.55);
           if (op < 0.015) continue;
 
           const hue = s.doppler > 0 ? 205 + s.doppler * 25 : 18 + s.doppler * -10;
@@ -240,7 +258,7 @@ export function SpaceSimulation() {
           ctx.moveTo(s.x, s.y);
           ctx.lineTo(next.x, next.y);
           ctx.strokeStyle = `hsla(${hue}, 85%, ${light}%, ${op})`;
-          ctx.lineWidth = s.width * (1 + energy * 0.6);
+          ctx.lineWidth = s.width * (1 + energy * 0.6) * orbitScale;
           ctx.lineCap = "round";
           ctx.stroke();
         }
@@ -248,18 +266,24 @@ export function SpaceSimulation() {
 
       // Bright inner rim of the disk right before it plunges past the
       // photon sphere — the hottest, fastest-orbiting material.
-      const innerSamples = sampleDisk(well, 1.0, DISK_TILT, t, DISK_SAMPLES);
+      const innerSamples = sampleDisk(
+        well,
+        1.0 * orbitScale,
+        orbitTilt,
+        t + orbitRotation,
+        DISK_SAMPLES
+      );
       for (let i = 0; i < innerSamples.length; i++) {
         const s = innerSamples[i];
         const next = innerSamples[(i + 1) % innerSamples.length];
-        const op = clampOpacity(s.brightness * diskBrightness * 0.85);
+        const op = clampOpacity(s.brightness * orbitBrightness * 0.85);
         if (op < 0.02) continue;
         const hue = s.doppler > 0 ? 200 : 30;
         ctx.beginPath();
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(next.x, next.y);
         ctx.strokeStyle = `hsla(${hue}, 90%, 92%, ${op})`;
-        ctx.lineWidth = s.width * 1.3 * (1 + energy * 0.8);
+        ctx.lineWidth = s.width * 1.3 * (1 + energy * 0.8) * orbitScale;
         ctx.lineCap = "round";
         ctx.stroke();
       }
@@ -290,36 +314,39 @@ export function SpaceSimulation() {
       // ─── Secondary (lensed) image: far side of the disk bent around the
       // photon sphere into a thin bright arc above the shadow — the
       // signature feature distinguishing a real black hole render from a
-      // flat ring. ──────────────────────────────────────────────────────
-      const secondary = sampleSecondaryImage(well, t, SECONDARY_SAMPLES);
+      // flat ring. Follows the same orbital perspective as the disk. ────
+      const secondary = sampleSecondaryImage(well, t + orbitRotation, SECONDARY_SAMPLES);
       for (let i = 0; i < secondary.length - 1; i++) {
         const s = secondary[i];
         const next = secondary[i + 1];
-        const op = clampOpacity(s.brightness * diskBrightness * 0.7);
+        const op = clampOpacity(s.brightness * orbitBrightness * 0.7);
         if (op < 0.015) continue;
         ctx.beginPath();
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(next.x, next.y);
         ctx.strokeStyle = `hsla(${s.doppler > 0 ? 205 : 25}, 80%, 90%, ${op})`;
-        ctx.lineWidth = s.width * (1 + energy * 0.6);
+        ctx.lineWidth = s.width * (1 + energy * 0.6) * orbitScale;
         ctx.lineCap = "round";
         ctx.stroke();
       }
 
       // ─── Photon ring: thin, crisp, asymmetric line right at the shadow
       // boundary — brightest where the approaching disk material lenses
-      // directly onto it. ─────────────────────────────────────────────────
+      // directly onto it. Radius breathes and rotates with orbital
+      // perspective so it reads as swinging past the hole with the disk. ──
       const ringSamples = 140;
+      const ringRadius = well.photonRadius * orbitScale;
       for (let i = 0; i < ringSamples; i++) {
         const angle = (i / ringSamples) * Math.PI * 2;
         const next = ((i + 1) / ringSamples) * Math.PI * 2;
-        const approach = Math.cos(angle + t * 1.4);
-        const rx = well.x + Math.cos(angle) * well.photonRadius;
-        const ry = well.y + Math.sin(angle) * well.photonRadius;
-        const rx2 = well.x + Math.cos(next) * well.photonRadius;
-        const ry2 = well.y + Math.sin(next) * well.photonRadius;
+        const approach = Math.cos(angle + t * 1.4 + orbitRotation);
+        const rx = well.x + Math.cos(angle) * ringRadius;
+        const ry = well.y + Math.sin(angle) * ringRadius;
+        const rx2 = well.x + Math.cos(next) * ringRadius;
+        const ry2 = well.y + Math.sin(next) * ringRadius;
         const op = clampOpacity(
-          (0.18 + Math.pow(1 + approach * 0.85, 2.4) * 0.1 + energy * 0.25)
+          (0.18 + Math.pow(1 + approach * 0.85, 2.4) * 0.1 + energy * 0.25) *
+            (0.85 + orbitProximity * 0.3)
         );
         ctx.beginPath();
         ctx.moveTo(rx, ry);
