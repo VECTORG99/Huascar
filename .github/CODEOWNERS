@@ -1,8 +1,21 @@
-# Default owner for all files
+# Default owners for all files
 * @VECTORG99
 
-# Security-sensitive paths require explicit review
-src/kiro/hooks.ts @VECTORG99
-src/kiro/security-policy.json @VECTORG99
-src/middleware/ @VECTORG99
-.env.example @VECTORG99
+# Backend
+/src/ @VECTORG99
+/test/ @VECTORG99
+
+# Frontend
+/frontend/ @VECTORG99
+/agent-creator/ @VECTORG99
+
+# Infrastructure
+/Dockerfile* @VECTORG99
+/docker-compose.yml @VECTORG99
+/.github/ @VECTORG99
+
+# Security-sensitive files require explicit review
+/src/kiro/security-policy.json @VECTORG99
+/src/kiro/hooks.ts @VECTORG99
+/src/security/ @VECTORG99
+/.env.example @VECTORG99
