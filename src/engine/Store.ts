@@ -84,9 +84,18 @@ export class Store {
     }
   }
 
+  get isClosed(): boolean {
+    return this.closed;
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new Error('Store is closed');
+  }
+
   // --- Execution history ---
 
   saveExecution(role: string, task: string, response: string, createdAt?: string): void {
+    this.assertOpen();
     const stmt = createdAt
       ? this.db.prepare('INSERT INTO executions (role, task, response, created_at) VALUES (?, ?, ?, ?)')
       : this.db.prepare('INSERT INTO executions (role, task, response) VALUES (?, ?, ?)');
@@ -94,6 +103,7 @@ export class Store {
   }
 
   getHistory(limit: number = config.store.historyLimit): ExecutionRecord[] {
+    this.assertOpen();
     const stmt = this.db.prepare(
       'SELECT * FROM executions ORDER BY created_at DESC LIMIT ?'
     );
@@ -103,6 +113,7 @@ export class Store {
   // --- Registered agents ---
 
   createAgent(name: string, agentConfig: unknown, now = Date.now()): AgentRecord {
+    this.assertOpen();
     const agent = { id: randomUUID(), name, config: JSON.stringify(agentConfig), created_at: now, updated_at: now, last_executed_at: null, execution_count: 0 };
     this.db.prepare(`
       INSERT INTO agents (id, name, config, created_at, updated_at, last_executed_at, execution_count)
@@ -112,23 +123,28 @@ export class Store {
   }
 
   listAgents(): AgentRecord[] {
+    this.assertOpen();
     return this.db.prepare('SELECT * FROM agents ORDER BY updated_at DESC, name ASC').all() as AgentRecord[];
   }
 
   getAgent(id: string): AgentRecord | null {
+    this.assertOpen();
     return (this.db.prepare('SELECT * FROM agents WHERE id = ?').get(id) as AgentRecord | undefined) ?? null;
   }
 
   updateAgent(id: string, name: string, agentConfig: unknown, now = Date.now()): AgentRecord | null {
+    this.assertOpen();
     this.db.prepare('UPDATE agents SET name = ?, config = ?, updated_at = ? WHERE id = ?').run(name, JSON.stringify(agentConfig), now, id);
     return this.getAgent(id);
   }
 
   deleteAgent(id: string): boolean {
+    this.assertOpen();
     return this.db.prepare('DELETE FROM agents WHERE id = ?').run(id).changes > 0;
   }
 
   recordAgentExecution(id: string, now = Date.now()): AgentRecord | null {
+    this.assertOpen();
     this.db.prepare('UPDATE agents SET last_executed_at = ?, execution_count = execution_count + 1 WHERE id = ?').run(now, id);
     return this.getAgent(id);
   }
@@ -136,25 +152,30 @@ export class Store {
   // --- Agent sessions ---
 
   createSession(id: string, role: string, now = Date.now(), metadata?: string | null): SessionRecord {
+    this.assertOpen();
     this.db.prepare('INSERT INTO sessions (id, role, created_at, last_active_at, metadata) VALUES (?, ?, ?, ?, ?)')
       .run(id, role, now, now, metadata ?? null);
     return { id, role, created_at: now, last_active_at: now, metadata: metadata ?? null };
   }
 
   getSession(id: string): SessionRecord | null {
+    this.assertOpen();
     return (this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRecord | undefined) ?? null;
   }
 
   touchSession(id: string, now = Date.now()): void {
+    this.assertOpen();
     this.db.prepare('UPDATE sessions SET last_active_at = ? WHERE id = ?').run(now, id);
   }
 
   addSessionMessage(sessionId: string, role: string, content: string, now = Date.now()): void {
+    this.assertOpen();
     this.db.prepare('INSERT INTO session_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)')
       .run(sessionId, role, content, now);
   }
 
   listSessionMessages(sessionId: string, limit = config.sessions.maxMessages): SessionMessageRecord[] {
+    this.assertOpen();
     const rows = this.db.prepare(`
       SELECT * FROM session_messages
       WHERE session_id = ?
@@ -165,6 +186,7 @@ export class Store {
   }
 
   deleteExpiredSessions(ttlMs = config.sessions.ttlMs, now = Date.now()): number {
+    this.assertOpen();
     return this.db.transaction((expiresBefore: number) => {
       this.db.prepare('DELETE FROM session_messages WHERE session_id IN (SELECT id FROM sessions WHERE last_active_at < ?)')
         .run(expiresBefore);
@@ -173,6 +195,7 @@ export class Store {
   }
 
   cleanupRetention(options = config.retention, now = Date.now()): RetentionCleanupReport {
+    this.assertOpen();
     const cutoff = new Date(now - options.executionMaxAgeDays * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
 
     return this.db.transaction(() => {
@@ -201,6 +224,7 @@ export class Store {
   // --- Vector RAG ---
 
   saveChunk(chunk: { source: string; chunkIndex: number; chunkText: string; embedding?: number[]; contentHash?: string; chunkHash?: string; createdAt?: string }): void {
+    this.assertOpen();
     const embeddingJson = chunk.embedding ? JSON.stringify(chunk.embedding) : null;
     const stmt = chunk.createdAt
       ? this.db.prepare('INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -210,6 +234,7 @@ export class Store {
   }
 
   getContentHashBySource(source: string): string | null {
+    this.assertOpen();
     const row = this.db.prepare(`
       SELECT content_hash, SUM(CASE WHEN embedding IS NULL THEN 1 ELSE 0 END) as missing_embeddings
       FROM rag_documents
@@ -222,11 +247,13 @@ export class Store {
   }
 
   deleteChunksBySource(source: string): void {
+    this.assertOpen();
     const stmt = this.db.prepare('DELETE FROM rag_documents WHERE source = ?');
     stmt.run(source);
   }
 
   getRagSources(): RagSourceSummary[] {
+    this.assertOpen();
     const rows = this.db.prepare(`
       SELECT source, COUNT(*) as chunk_count, MAX(content_hash) as content_hash, GROUP_CONCAT(chunk_hash) as chunk_hashes
       FROM rag_documents
@@ -240,6 +267,7 @@ export class Store {
   }
 
   getAllChunks(): DocumentChunk[] {
+    this.assertOpen();
     const rows = this.db.prepare('SELECT * FROM rag_documents ORDER BY source, chunk_index').all() as any[];
     return rows.map(r => ({
       ...r,
@@ -248,6 +276,7 @@ export class Store {
   }
 
   getChunksCount(): number {
+    this.assertOpen();
     const row = this.db.prepare('SELECT COUNT(*) as count FROM rag_documents').get() as { count: number };
     return row.count;
   }
