@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { config } from './config.js';
 import { Store } from './engine/Store.js';
 import { creatorProtectedRouter, creatorPublicRouter } from './creator/router.js';
@@ -37,7 +38,39 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
 }));
 app.use(express.json({ limit: '128kb' }));
-app.use('/api/v1/creator', creatorPublicRouter);
+
+// --- Rate Limiting ---
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_GLOBAL || '100', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+  keyGenerator: (req) => req.ip || req.socket.remoteAddress || 'unknown',
+});
+
+const executeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_EXECUTE || '5', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Execution rate limit exceeded. Max 5 requests per minute.' },
+  keyGenerator: (req) => req.ip || req.socket.remoteAddress || 'unknown',
+});
+
+const creatorLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_CREATOR || '30', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Creator API rate limit exceeded' },
+  keyGenerator: (req) => req.ip || req.socket.remoteAddress || 'unknown',
+});
+
+app.use(globalLimiter);
+export { executeLimiter, creatorLimiter };
+
+app.use('/api/v1/creator', creatorLimiter, creatorPublicRouter);
 
 // ponytail: global request timeout. Per-endpoint overrides if needed later.
 app.use((req, res, next) => {
@@ -67,6 +100,9 @@ app.use('/api', ragRouter(store));
 app.use('/api', rolesRouter());
 app.use('/api', agentsRouter(store));
 app.use('/api', agentRouter(store));
+
+// Apply stricter rate limit to agent execution endpoint
+app.use('/api/agent/execute', executeLimiter);
 app.use('/api', hooksRouter(commitApprovals));
 
 app.use(notFound);
