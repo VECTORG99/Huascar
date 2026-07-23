@@ -20,6 +20,8 @@ export interface DocumentChunk {
   chunk_index: number;
   chunk_text: string;
   embedding: number[] | null;
+  content_hash: string | null;
+  chunk_hash: string | null;
   created_at: string;
 }
 
@@ -61,12 +63,17 @@ export class Store {
 
   // --- Vector RAG ---
 
-  saveChunk(chunk: { source: string; chunkIndex: number; chunkText: string; embedding?: number[] }): void {
+  saveChunk(chunk: { source: string; chunkIndex: number; chunkText: string; embedding?: number[]; contentHash?: string; chunkHash?: string }): void {
     const embeddingJson = chunk.embedding ? JSON.stringify(chunk.embedding) : null;
     const stmt = this.db.prepare(
-      'INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding) VALUES (?, ?, ?, ?)'
+      'INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash) VALUES (?, ?, ?, ?, ?, ?)'
     );
-    stmt.run(chunk.source, chunk.chunkIndex, chunk.chunkText, embeddingJson);
+    stmt.run(chunk.source, chunk.chunkIndex, chunk.chunkText, embeddingJson, chunk.contentHash ?? null, chunk.chunkHash ?? null);
+  }
+
+  getContentHashBySource(source: string): string | null {
+    const row = this.db.prepare('SELECT content_hash FROM rag_documents WHERE source = ? AND content_hash IS NOT NULL LIMIT 1').get(source) as { content_hash: string } | undefined;
+    return row?.content_hash ?? null;
   }
 
   deleteChunksBySource(source: string): void {

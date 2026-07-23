@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { URL } from 'url';
 import { config } from '../config.js';
 import { Store } from './Store.js';
@@ -22,6 +23,10 @@ function isBlockedUrl(urlStr: string): boolean {
   } catch {
     return true;
   }
+}
+
+function sha256(text: string): string {
+  return crypto.createHash('sha256').update(text).digest('hex');
 }
 
 export type RagSource =
@@ -131,10 +136,17 @@ export class RagEngine {
   }
 
   /** Embed text chunks and persist to store. Skips if no API key or store. */
-  private async indexChunks(source: string, chunks: string[]): Promise<void> {
+  private async indexContent(source: string, content: string): Promise<void> {
     if (!this.store || !config.hasEmbeddingApiKey) return;
 
+    const contentHash = sha256(content);
+    if (this.store.getContentHashBySource(source) === contentHash) {
+      logger.info(`[RagEngine] Fuente sin cambios, saltando reindex: "${source}"`);
+      return;
+    }
+
     this.store.deleteChunksBySource(source);
+    const chunks = this.splitIntoChunks(content);
 
     let hasEmbeddings = false;
     const batchSize = 20;
@@ -153,6 +165,8 @@ export class RagEngine {
           chunkIndex: i + j,
           chunkText: batch[j],
           embedding: embeddings?.[j] ?? undefined,
+          contentHash,
+          chunkHash: sha256(batch[j]),
         });
       }
     }
@@ -178,7 +192,7 @@ export class RagEngine {
             const resolved = path.resolve(source.path);
             const content = fs.readFileSync(resolved, this.encoding);
             this.loadedContent.push(this.wrapSnippet(source.path, content));
-            await this.indexChunks(source.path, this.splitIntoChunks(content));
+            await this.indexContent(source.path, content);
             break;
           }
           case 'local_directory': {
@@ -195,7 +209,7 @@ export class RagEngine {
                 const content = fs.readFileSync(filePath, this.encoding);
                 const label = path.join(source.path, file);
                 this.loadedContent.push(this.wrapSnippet(label, content));
-                await this.indexChunks(label, this.splitIntoChunks(content));
+                await this.indexContent(label, content);
               } catch (err: unknown) {
                 logger.warn(`[RagEngine] Error leyendo ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
               }
@@ -204,7 +218,7 @@ export class RagEngine {
           }
           case 'inline': {
             this.loadedContent.push(this.wrapSnippet('inline', source.content));
-            await this.indexChunks('inline', this.splitIntoChunks(source.content));
+            await this.indexContent('inline', source.content);
             break;
           }
           case 'web_url': {
@@ -242,7 +256,7 @@ export class RagEngine {
               if (text) {
                 const label = `URL: ${source.url}`;
                 this.loadedContent.push(this.wrapSnippet(label, text));
-                await this.indexChunks(label, this.splitIntoChunks(text));
+                await this.indexContent(label, text);
               }
             } finally {
               if (timeout) clearTimeout(timeout);
