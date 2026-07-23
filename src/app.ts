@@ -16,6 +16,7 @@ import { createMetricsState, metricsMiddleware, metricsRouter } from './routes/m
 import { openApiRouter } from './routes/openapi.js';
 import { ragRouter } from './routes/rag.js';
 import { rolesRouter } from './routes/roles.js';
+import { logger } from './logger.js';
 import { commitApprovals } from './services/approvals.js';
 
 export const app = express();
@@ -29,12 +30,14 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      logger.warn({ origin }, '[CORS] Blocked request from origin');
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+  maxAge: 86400, // Preflight cache 24h — reduces OPTIONS requests
 }));
 app.use(express.json({ limit: '128kb' }));
 app.use('/api/v1/creator', creatorPublicRouter);
