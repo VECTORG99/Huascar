@@ -3,6 +3,15 @@ import { mcpConnectionPool } from './engine/McpConnectionPool.js';
 import { logger } from './logger.js';
 import { app, store } from './app.js';
 
+if (config.retention.cleanupOnStart) {
+  try {
+    const report = store.cleanupRetention();
+    logger.info({ retention: report }, 'retention cleanup completed');
+  } catch (err) {
+    logger.error({ err }, 'retention cleanup failed');
+  }
+}
+
 const server = app.listen(config.server.port, config.server.host, () => {
   logger.info({ host: config.server.host, port: config.server.port }, 'Huascar Backend running');
 });
