@@ -79,8 +79,15 @@ export class Store {
   }
 
   getContentHashBySource(source: string): string | null {
-    const row = this.db.prepare('SELECT content_hash FROM rag_documents WHERE source = ? AND content_hash IS NOT NULL LIMIT 1').get(source) as { content_hash: string } | undefined;
-    return row?.content_hash ?? null;
+    const row = this.db.prepare(`
+      SELECT content_hash, SUM(CASE WHEN embedding IS NULL THEN 1 ELSE 0 END) as missing_embeddings
+      FROM rag_documents
+      WHERE source = ? AND content_hash IS NOT NULL
+      GROUP BY content_hash
+      LIMIT 1
+    `).get(source) as { content_hash: string; missing_embeddings: number } | undefined;
+    if (!row || row.missing_embeddings > 0) return null;
+    return row.content_hash;
   }
 
   deleteChunksBySource(source: string): void {

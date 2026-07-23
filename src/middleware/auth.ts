@@ -48,10 +48,10 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  // If no API keys are configured, warn and pass through (misconfiguration)
+  // Fail closed: production auth misconfiguration must not allow protected requests.
   if (API_KEYS.size === 0) {
-    logger.warn('AUTH_REQUIRED=true but no HUASCAR_API_KEYS configured — allowing request');
-    next();
+    logger.error('AUTH_REQUIRED=true but no HUASCAR_API_KEYS configured');
+    res.status(500).json({ error: 'Authentication misconfigured', code: 'AUTH_MISCONFIGURED' });
     return;
   }
 

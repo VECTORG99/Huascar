@@ -202,4 +202,31 @@ describe('RagEngine', () => {
       config.rag.chunkSize = originalChunkSize;
     }
   });
+
+  it('does not skip unchanged source when prior embeddings are missing', async () => {
+    const { config } = await import('../src/config.js');
+    const previousEmbeddingFlag = config.hasEmbeddingApiKey;
+    config.hasEmbeddingApiKey = true;
+    process.env.OPENAI_API_KEY = 'test-key';
+    let embeddingCalls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      embeddingCalls++;
+      return { ok: true, json: async () => ({ data: [] }) };
+    };
+    const { Store } = await import('../src/engine/Store.js');
+    const store = new Store('/tmp/huascar_missing_embedding_skip.db');
+    try {
+      const engine = new RagEngine({ store });
+      await engine.loadSources([{ type: 'inline', content: 'same content' }]);
+      await engine.loadSources([{ type: 'inline', content: 'same content' }]);
+      assert.strictEqual(embeddingCalls, 4);
+    } finally {
+      store.close();
+      config.hasEmbeddingApiKey = previousEmbeddingFlag;
+      globalThis.fetch = originalFetch;
+      delete process.env.OPENAI_API_KEY;
+    }
+  });
+
 });
