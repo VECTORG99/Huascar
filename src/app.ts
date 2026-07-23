@@ -19,12 +19,21 @@ import { openApiRouter } from './routes/openapi.js';
 import { ragRouter } from './routes/rag.js';
 import { rolesRouter } from './routes/roles.js';
 import { mcpStatusRouter } from './routes/mcpStatus.js';
+import { toolsRouter } from './routes/tools.js';
+import { createConfigsRouter } from './routes/configs.js';
+import { memoryRouter } from './routes/memory.js';
+import { pipelineRouter } from './routes/pipeline.js';
+import { createDebugState, debugMiddleware, debugRouter } from './routes/debug.js';
+import { ConfigStore } from './engine/ConfigStore.js';
+import { ExecutionContext } from './engine/ExecutionContext.js';
 import { logger } from './logger.js';
 import { commitApprovals } from './services/approvals.js';
 
 export const app = express();
 export const store = new Store();
 export const metricsState = createMetricsState();
+export const debugState = createDebugState();
+export const executionContext = new ExecutionContext(store);
 
 // Security headers (XSS, clickjacking, MIME sniffing protection)
 app.use(
@@ -109,10 +118,12 @@ app.use((_req, res, next) => {
 });
 
 app.use(metricsMiddleware(metricsState));
+app.use(debugMiddleware(debugState));
 app.use('/api', metricsRouter(metricsState));
 app.use('/api', healthRouter);
 app.use('/api', mcpStatusRouter);
 app.use('/api', openApiRouter);
+app.use('/api', toolsRouter());
 
 app.use('/api', (req, res, next) => {
   // Health and metrics are already handled above
@@ -126,10 +137,14 @@ app.use('/api', ragRouter(store));
 app.use('/api', rolesRouter());
 app.use('/api', agentsRouter(store));
 app.use('/api', agentRouter(store));
+app.use('/api', createConfigsRouter(new ConfigStore(store.getDatabase())));
 
 // Apply stricter rate limit to agent execution endpoint
 app.use('/api/agent/execute', executeLimiter);
 app.use('/api', hooksRouter(commitApprovals));
+app.use('/api', memoryRouter(executionContext));
+app.use('/api', pipelineRouter(store));
+app.use('/api', debugRouter(debugState, store));
 
 app.use(notFound);
 app.use(errorHandler);

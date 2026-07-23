@@ -88,6 +88,12 @@ export class Store {
     return this.closed;
   }
 
+  /** Expose the raw database instance for subsystems (ConfigStore, etc.) */
+  getDatabase(): Database.Database {
+    this.assertOpen();
+    return this.db;
+  }
+
   private assertOpen(): void {
     if (this.closed) throw new Error('Store is closed');
   }
@@ -106,9 +112,7 @@ export class Store {
     this.assertOpen();
     const boundedLimit = Math.min(Math.max(0, limit), 100); // Cap at 100, allow 0 for "no results"
     const boundedOffset = Math.max(0, offset);
-    const stmt = this.db.prepare(
-      'SELECT * FROM executions ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    );
+    const stmt = this.db.prepare('SELECT * FROM executions ORDER BY created_at DESC LIMIT ? OFFSET ?');
     return stmt.all(boundedLimit, boundedOffset) as ExecutionRecord[];
   }
 
@@ -122,11 +126,23 @@ export class Store {
 
   createAgent(name: string, agentConfig: unknown, now = Date.now()): AgentRecord {
     this.assertOpen();
-    const agent = { id: randomUUID(), name, config: JSON.stringify(agentConfig), created_at: now, updated_at: now, last_executed_at: null, execution_count: 0 };
-    this.db.prepare(`
+    const agent = {
+      id: randomUUID(),
+      name,
+      config: JSON.stringify(agentConfig),
+      created_at: now,
+      updated_at: now,
+      last_executed_at: null,
+      execution_count: 0,
+    };
+    this.db
+      .prepare(
+        `
       INSERT INTO agents (id, name, config, created_at, updated_at, last_executed_at, execution_count)
       VALUES (@id, @name, @config, @created_at, @updated_at, @last_executed_at, @execution_count)
-    `).run(agent);
+    `,
+      )
+      .run(agent);
     return agent;
   }
 
@@ -142,7 +158,9 @@ export class Store {
 
   updateAgent(id: string, name: string, agentConfig: unknown, now = Date.now()): AgentRecord | null {
     this.assertOpen();
-    this.db.prepare('UPDATE agents SET name = ?, config = ?, updated_at = ? WHERE id = ?').run(name, JSON.stringify(agentConfig), now, id);
+    this.db
+      .prepare('UPDATE agents SET name = ?, config = ?, updated_at = ? WHERE id = ?')
+      .run(name, JSON.stringify(agentConfig), now, id);
     return this.getAgent(id);
   }
 
@@ -153,7 +171,9 @@ export class Store {
 
   recordAgentExecution(id: string, now = Date.now()): AgentRecord | null {
     this.assertOpen();
-    this.db.prepare('UPDATE agents SET last_executed_at = ?, execution_count = execution_count + 1 WHERE id = ?').run(now, id);
+    this.db
+      .prepare('UPDATE agents SET last_executed_at = ?, execution_count = execution_count + 1 WHERE id = ?')
+      .run(now, id);
     return this.getAgent(id);
   }
 
@@ -161,7 +181,8 @@ export class Store {
 
   createSession(id: string, role: string, now = Date.now(), metadata?: string | null): SessionRecord {
     this.assertOpen();
-    this.db.prepare('INSERT INTO sessions (id, role, created_at, last_active_at, metadata) VALUES (?, ?, ?, ?, ?)')
+    this.db
+      .prepare('INSERT INTO sessions (id, role, created_at, last_active_at, metadata) VALUES (?, ?, ?, ?, ?)')
       .run(id, role, now, now, metadata ?? null);
     return { id, role, created_at: now, last_active_at: now, metadata: metadata ?? null };
   }
@@ -178,25 +199,31 @@ export class Store {
 
   addSessionMessage(sessionId: string, role: string, content: string, now = Date.now()): void {
     this.assertOpen();
-    this.db.prepare('INSERT INTO session_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)')
+    this.db
+      .prepare('INSERT INTO session_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)')
       .run(sessionId, role, content, now);
   }
 
   listSessionMessages(sessionId: string, limit = config.sessions.maxMessages): SessionMessageRecord[] {
     this.assertOpen();
-    const rows = this.db.prepare(`
+    const rows = this.db
+      .prepare(
+        `
       SELECT * FROM session_messages
       WHERE session_id = ?
       ORDER BY created_at DESC, id DESC
       LIMIT ?
-    `).all(sessionId, limit) as SessionMessageRecord[];
+    `,
+      )
+      .all(sessionId, limit) as SessionMessageRecord[];
     return rows.reverse();
   }
 
   deleteExpiredSessions(ttlMs = config.sessions.ttlMs, now = Date.now()): number {
     this.assertOpen();
     return this.db.transaction((expiresBefore: number) => {
-      this.db.prepare('DELETE FROM session_messages WHERE session_id IN (SELECT id FROM sessions WHERE last_active_at < ?)')
+      this.db
+        .prepare('DELETE FROM session_messages WHERE session_id IN (SELECT id FROM sessions WHERE last_active_at < ?)')
         .run(expiresBefore);
       return this.db.prepare('DELETE FROM sessions WHERE last_active_at < ?').run(expiresBefore).changes;
     })(now - ttlMs) as number;
@@ -204,17 +231,26 @@ export class Store {
 
   cleanupRetention(options = config.retention, now = Date.now()): RetentionCleanupReport {
     this.assertOpen();
-    const cutoff = new Date(now - options.executionMaxAgeDays * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    const cutoff = new Date(now - options.executionMaxAgeDays * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .slice(0, 19);
 
     return this.db.transaction(() => {
       const executionsDeletedByAge = this.db.prepare('DELETE FROM executions WHERE created_at < ?').run(cutoff).changes;
-      const executionsDeletedByCount = this.db.prepare(`
+      const executionsDeletedByCount = this.db
+        .prepare(
+          `
         DELETE FROM executions
         WHERE id NOT IN (
           SELECT id FROM executions ORDER BY created_at DESC, id DESC LIMIT ?
         )
-      `).run(options.executionMaxCount).changes;
-      const chunksDeleted = this.db.prepare(`
+      `,
+        )
+        .run(options.executionMaxCount).changes;
+      const chunksDeleted = this.db
+        .prepare(
+          `
         DELETE FROM rag_documents
         WHERE id IN (
           SELECT id FROM (
@@ -223,7 +259,9 @@ export class Store {
           )
           WHERE row_num > ?
         )
-      `).run(options.ragChunksMaxPerSource).changes;
+      `,
+        )
+        .run(options.ragChunksMaxPerSource).changes;
 
       return { executionsDeleted: executionsDeletedByAge + executionsDeletedByCount, chunksDeleted };
     })() as RetentionCleanupReport;
@@ -231,25 +269,48 @@ export class Store {
 
   // --- Vector RAG ---
 
-  saveChunk(chunk: { source: string; chunkIndex: number; chunkText: string; embedding?: number[]; contentHash?: string; chunkHash?: string; createdAt?: string }): void {
+  saveChunk(chunk: {
+    source: string;
+    chunkIndex: number;
+    chunkText: string;
+    embedding?: number[];
+    contentHash?: string;
+    chunkHash?: string;
+    createdAt?: string;
+  }): void {
     this.assertOpen();
     const embeddingJson = chunk.embedding ? JSON.stringify(chunk.embedding) : null;
     const stmt = chunk.createdAt
-      ? this.db.prepare('INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      : this.db.prepare('INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash) VALUES (?, ?, ?, ?, ?, ?)');
-    const params = [chunk.source, chunk.chunkIndex, chunk.chunkText, embeddingJson, chunk.contentHash ?? null, chunk.chunkHash ?? null];
+      ? this.db.prepare(
+          'INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        )
+      : this.db.prepare(
+          'INSERT INTO rag_documents (source, chunk_index, chunk_text, embedding, content_hash, chunk_hash) VALUES (?, ?, ?, ?, ?, ?)',
+        );
+    const params = [
+      chunk.source,
+      chunk.chunkIndex,
+      chunk.chunkText,
+      embeddingJson,
+      chunk.contentHash ?? null,
+      chunk.chunkHash ?? null,
+    ];
     chunk.createdAt ? stmt.run(...params, chunk.createdAt) : stmt.run(...params);
   }
 
   getContentHashBySource(source: string): string | null {
     this.assertOpen();
-    const row = this.db.prepare(`
+    const row = this.db
+      .prepare(
+        `
       SELECT content_hash, SUM(CASE WHEN embedding IS NULL THEN 1 ELSE 0 END) as missing_embeddings
       FROM rag_documents
       WHERE source = ? AND content_hash IS NOT NULL
       GROUP BY content_hash
       LIMIT 1
-    `).get(source) as { content_hash: string; missing_embeddings: number } | undefined;
+    `,
+      )
+      .get(source) as { content_hash: string; missing_embeddings: number } | undefined;
     if (!row || row.missing_embeddings > 0) return null;
     return row.content_hash;
   }
@@ -262,13 +323,17 @@ export class Store {
 
   getRagSources(): RagSourceSummary[] {
     this.assertOpen();
-    const rows = this.db.prepare(`
+    const rows = this.db
+      .prepare(
+        `
       SELECT source, COUNT(*) as chunk_count, MAX(content_hash) as content_hash, GROUP_CONCAT(chunk_hash) as chunk_hashes
       FROM rag_documents
       GROUP BY source
       ORDER BY source
-    `).all() as { source: string; chunk_count: number; content_hash: string | null; chunk_hashes: string | null }[];
-    return rows.map(r => ({
+    `,
+      )
+      .all() as { source: string; chunk_count: number; content_hash: string | null; chunk_hashes: string | null }[];
+    return rows.map((r) => ({
       ...r,
       chunk_hashes: r.chunk_hashes ? r.chunk_hashes.split(',').filter(Boolean) : [],
     }));
@@ -277,9 +342,9 @@ export class Store {
   getAllChunks(): DocumentChunk[] {
     this.assertOpen();
     const rows = this.db.prepare('SELECT * FROM rag_documents ORDER BY source, chunk_index').all() as any[];
-    return rows.map(r => ({
+    return rows.map((r) => ({
       ...r,
-      embedding: r.embedding ? JSON.parse(r.embedding) as number[] : null,
+      embedding: r.embedding ? (JSON.parse(r.embedding) as number[]) : null,
     }));
   }
 

@@ -1,0 +1,47 @@
+{
+  "id": "basic_qa",
+  "name": "Basic Q&A Tasks",
+  "description": "Simple tasks with verifiable answers to test basic agent functionality",
+  "cases": [
+    {
+      "id": "qa_001",
+      "task": "What is the capital of France?",
+      "role": "ASSISTANT",
+      "expectedContains": ["Paris"],
+      "shouldComplete": true,
+      "tags": ["factual", "simple"]
+    },
+    {
+      "id": "qa_002",
+      "task": "List 3 programming languages used for web development",
+      "role": "ASSISTANT",
+      "expectedContains": ["JavaScript"],
+      "shouldComplete": true,
+      "tags": ["factual", "list"]
+    },
+    {
+      "id": "qa_003",
+      "task": "Explain what a REST API is in one paragraph",
+      "role": "ASSISTANT",
+      "expectedContains": ["HTTP"],
+      "shouldComplete": true,
+      "tags": ["explanation"]
+    },
+    {
+      "id": "qa_004",
+      "task": "What HTTP status code means 'Not Found'?",
+      "role": "ASSISTANT",
+      "expectedContains": ["404"],
+      "shouldComplete": true,
+      "tags": ["factual", "technical"]
+    },
+    {
+      "id": "qa_005",
+      "task": "What does SQL stand for?",
+      "role": "ASSISTANT",
+      "expectedContains": ["Structured Query Language"],
+      "shouldComplete": true,
+      "tags": ["factual", "acronym"]
+    }
+  ]
+}

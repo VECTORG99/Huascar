@@ -1,0 +1,12 @@
+{
+  "testAgent": {
+    "name": "E2E Test Agent",
+    "purpose": "development",
+    "objective": "Run automated tests and report results",
+    "success_criteria": "All tests pass without manual intervention",
+    "project_stage": "existing",
+    "languages": ["typescript"],
+    "frameworks": ["express"],
+    "environment": "development"
+  }
+}

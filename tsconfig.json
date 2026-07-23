@@ -13,9 +13,5 @@
     "noUnusedParameters": true,
     "exactOptionalPropertyTypes": false
   },
-  "exclude": [
-    "node_modules",
-    "frontend",
-    "agent-creator"
-  ]
+  "exclude": ["node_modules", "frontend", "agent-creator", "e2e", "sdk"]
 }

@@ -1,0 +1,43 @@
+{
+  "pipelines": {
+    "pr_review_and_fix": {
+      "id": "pr_review_and_fix",
+      "name": "Review PR and Fix Issues",
+      "steps": [
+        {
+          "role": "PR_REVIEWER",
+          "task": "Review the latest PR for security issues, code quality, and test coverage"
+        },
+        {
+          "role": "DEVELOPER",
+          "task": "Fix the issues found in the review",
+          "condition": "previous.status === 'success'"
+        }
+      ],
+      "onFailure": "abort"
+    },
+    "deploy_with_validation": {
+      "id": "deploy_with_validation",
+      "name": "Deploy with Pre-flight Validation",
+      "steps": [
+        {
+          "role": "DEVELOPER",
+          "task": "Run all tests and linting checks"
+        },
+        {
+          "role": "SECURITY_AUDITOR",
+          "task": "Scan dependencies for vulnerabilities",
+          "condition": "previous.status === 'success'"
+        },
+        {
+          "role": "DEPLOYER",
+          "task": "Deploy to staging environment",
+          "condition": "previous.status === 'success'",
+          "retries": 1
+        }
+      ],
+      "onFailure": "abort",
+      "maxDelegationDepth": 3
+    }
+  }
+}
