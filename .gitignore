@@ -1,7 +1,44 @@
-node_modules
-frontend/node_modules
-agent-creator/node_modules
-.slim/deepwork/
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Database
 data/
 *.db
-/dist/
+*.db-wal
+*.db-shm
+
+# Coverage
+coverage/
+.nyc_output/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temp
+.slim/
+tmp/
+.kiro/
