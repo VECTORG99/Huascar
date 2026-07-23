@@ -8,22 +8,87 @@ import { VectorIndex } from './VectorIndex.js';
 import { logger } from '../logger.js';
 import { ErrorCodes, RagError } from '../errors.js';
 
-// ponytail: blocklist-based SSRF prevention. Upgrade to DNS-resolution check if deployed publicly.
+// SSRF prevention: block private/reserved IPs and dangerous hosts
 const BLOCKED_HOSTS = [
   'localhost', '127.0.0.1', '::1', '0.0.0.0',
   '::ffff:127.0.0.1', '::ffff:0.0.0.0',
   '169.254.169.254', 'metadata.google.internal',
   '::ffff:a9fe:a9fe',
+  'metadata.internal', 'kubernetes.default.svc',
 ];
+
+/**
+ * Check if an IP address is in a private/reserved range.
+ * Covers: loopback, private (RFC1918), link-local, multicast, cloud metadata.
+ */
+function isPrivateIp(ip: string): boolean {
+  // IPv4 checks
+  const parts = ip.split('.').map(Number);
+  if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
+    if (parts[0] === 127) return true;                          // 127.0.0.0/8 loopback
+    if (parts[0] === 10) return true;                           // 10.0.0.0/8 private
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true; // 172.16.0.0/12
+    if (parts[0] === 192 && parts[1] === 168) return true;     // 192.168.0.0/16
+    if (parts[0] === 169 && parts[1] === 254) return true;     // 169.254.0.0/16 link-local
+    if (parts[0] === 0) return true;                            // 0.0.0.0/8
+    if (parts[0] >= 224) return true;                           // 224.0.0.0+ multicast/reserved
+  }
+  // IPv6 checks
+  if (ip === '::1' || ip === '::' || ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd')) {
+    return true;
+  }
+  // IPv4-mapped IPv6
+  if (ip.startsWith('::ffff:')) {
+    const mapped = ip.slice(7);
+    return isPrivateIp(mapped);
+  }
+  return false;
+}
+
+/** Maximum bytes to download from a remote URL */
+const MAX_DOWNLOAD_BYTES = 512 * 1024; // 512KB
 
 function isBlockedUrl(urlStr: string): boolean {
   try {
     const parsed = new URL(urlStr);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
-    return BLOCKED_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
+    if (BLOCKED_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h))) return true;
+    if (isPrivateIp(parsed.hostname)) return true;
+    // Block numeric IPs that could be private (octal, hex, decimal encodings)
+    if (/^\d+$/.test(parsed.hostname)) return true; // decimal-encoded IP
+    if (/^0x/i.test(parsed.hostname)) return true;  // hex-encoded IP
+    return false;
   } catch {
     return true;
   }
+}
+
+/**
+ * Stream-read a response body with a hard byte limit.
+ * Prevents memory bombs from servers that omit Content-Length.
+ */
+async function readBounded(response: Response, maxBytes: number): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const decoder = new TextDecoder();
+  let result = '';
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        logger.warn(`[RagEngine] Download exceeded ${maxBytes} bytes, truncating`);
+        result += decoder.decode(value.slice(0, maxBytes - (totalBytes - value.byteLength)), { stream: false });
+        break;
+      }
+      result += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return result;
 }
 
 function sha256(text: string): string {
@@ -320,11 +385,12 @@ export class RagEngine {
                 break;
               }
               const contentLen = response.headers.get('content-length');
-              if (contentLen && parseInt(contentLen, 10) > 512 * 1024) {
-                logger.warn(`[RagEngine] URL ${source.url} demasiado grande (${contentLen} bytes), saltando.`);
+              if (contentLen && parseInt(contentLen, 10) > MAX_DOWNLOAD_BYTES) {
+                logger.warn(`[RagEngine] URL ${source.url} too large (${contentLen} bytes), skipping.`);
                 break;
               }
-              const html = await response.text();
+              // Stream-read with hard byte limit (prevents memory bombs)
+              const html = await readBounded(response, MAX_DOWNLOAD_BYTES);
               const text = html
                 .replace(/<!--[\s\S]*?-->/g, '')
                 .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
