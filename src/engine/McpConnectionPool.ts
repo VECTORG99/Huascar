@@ -1,6 +1,6 @@
 import fs from 'fs';
-import { Client } from '@modelcontextprotocol/sdk/client';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { config } from '../config.js';
 import { ErrorCodes, McpError } from '../errors.js';
 import { logger } from '../logger.js';
