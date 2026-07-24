@@ -259,8 +259,18 @@ export class HuascarEngine {
             );
           }
           // Add knowledge sources from config
+          // Security: only allow 'inline' sources from client requests.
+          // local_file, local_directory, and web_url are restricted to server-side config
+          // (rag.json) or registered agent configs to prevent path traversal and SSRF.
           if (agentConfig.knowledge && agentConfig.knowledge.length > 0) {
-            await this.rag.loadSources(agentConfig.knowledge);
+            const safeSources = agentConfig.knowledge.filter(source => {
+              if (source.type === 'inline') return true;
+              logger.warn(`[HuascarEngine] Blocked client-supplied RAG source type="${source.type}" — only inline allowed`);
+              return false;
+            });
+            if (safeSources.length > 0) {
+              await this.rag.loadSources(safeSources);
+            }
           }
 
           // Apply security controls from agent config
