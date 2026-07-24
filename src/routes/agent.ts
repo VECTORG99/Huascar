@@ -7,6 +7,15 @@ import { config } from '../config.js';
 
 type EngineClass = new (role: string, store: Store) => Pick<HuascarEngine, 'executeTask' | 'cancelAll'>;
 
+/**
+ * Client-supplied system_prompt is blocked by default in production.
+ * Only enabled when ALLOW_CLIENT_SYSTEM_PROMPT=true (for development/testing).
+ * Registered agents (via /api/agents/:id/execute) always use their stored steering.
+ */
+function getAllowClientSystemPrompt(): boolean {
+  return process.env.ALLOW_CLIENT_SYSTEM_PROMPT === 'true';
+}
+
 function validateExecuteBody(body: Record<string, unknown>) {
   const { task, role, system_prompt, config: agentConfig, session_id, mock_scenario } = body;
 
@@ -33,7 +42,7 @@ function validateExecuteBody(body: Record<string, unknown>) {
   return {
     task,
     role,
-    system_prompt: typeof system_prompt === 'string' ? system_prompt : undefined,
+    system_prompt: getAllowClientSystemPrompt() && typeof system_prompt === 'string' ? system_prompt : undefined,
     agentConfig: agentConfig as AgentConfig | undefined,
     session_id,
     mock_scenario,

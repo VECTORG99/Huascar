@@ -45,7 +45,6 @@ export function useAgentExecution(
       if (sessionId) body.session_id = sessionId;
       if (agentConfig) {
         body.config = agentConfig;
-        if (agentConfig.steering?.system_prompt) body.system_prompt = agentConfig.steering.system_prompt;
       }
       const res = await fetch(`${apiUrl}/api/agent/execute/stream`, {
         method: "POST",
