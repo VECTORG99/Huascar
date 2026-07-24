@@ -151,32 +151,31 @@ export class PipelineEngine {
   }
 
   /**
-   * Simple condition evaluator.
-   * Supports: "previous.status === 'success'" and "previous.status === 'blocked'"
+   * Simple condition evaluator — ONLY supports known safe patterns.
+   * Rejects arbitrary strings. Whitelist approach prevents injection.
    */
   private evaluateCondition(condition: string, results: StepResult[]): boolean {
     const previous = results[results.length - 1];
     if (!previous) return true;
 
-    // Simple pattern matching for conditions
-    if (condition.includes('previous.status')) {
-      if (condition.includes("'success'") || condition.includes('"success"')) {
-        return previous.status === 'success';
-      }
-      if (
-        condition.includes("'failed'") ||
-        condition.includes('"failed"') ||
-        condition.includes("'blocked'") ||
-        condition.includes('"blocked"')
-      ) {
-        return previous.status === 'failed';
-      }
-      if (condition.includes("'skipped'") || condition.includes('"skipped"')) {
-        return previous.status === 'skipped';
-      }
-    }
+    // Only allow exact known condition patterns
+    const ALLOWED_CONDITIONS: Record<string, (prev: StepResult) => boolean> = {
+      "previous.status === 'success'": (p) => p.status === 'success',
+      'previous.status === "success"': (p) => p.status === 'success',
+      "previous.status === 'failed'": (p) => p.status === 'failed',
+      'previous.status === "failed"': (p) => p.status === 'failed',
+      "previous.status === 'blocked'": (p) => p.status === 'failed',
+      'previous.status === "blocked"': (p) => p.status === 'failed',
+      "previous.status === 'skipped'": (p) => p.status === 'skipped',
+      'previous.status === "skipped"': (p) => p.status === 'skipped',
+    };
 
-    // Default: execute step
+    const trimmed = condition.trim();
+    const evaluator = ALLOWED_CONDITIONS[trimmed];
+    if (evaluator) return evaluator(previous);
+
+    // Unknown condition — log warning and default to execute
+    logger.warn({ condition }, '[PipelineEngine] Unknown condition pattern, defaulting to execute');
     return true;
   }
 

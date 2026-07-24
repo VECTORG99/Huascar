@@ -104,9 +104,7 @@ const creatorLimiter = rateLimit({
 app.use(globalLimiter);
 export { executeLimiter, creatorLimiter };
 
-app.use('/api/v1/creator', creatorLimiter, creatorPublicRouter);
-
-// ponytail: global request timeout. Per-endpoint overrides if needed later.
+// Global request timeout — applies to ALL routes including creator public
 app.use((_req, res, next) => {
   const timer = setTimeout(() => {
     if (!res.headersSent) res.status(503).json({ error: 'Request timeout' });
@@ -116,6 +114,8 @@ app.use((_req, res, next) => {
   res.on('close', done);
   next();
 });
+
+app.use('/api/v1/creator', creatorLimiter, creatorPublicRouter);
 
 app.use(metricsMiddleware(metricsState));
 app.use(debugMiddleware(debugState));
@@ -136,11 +136,10 @@ app.use('/api/v1/creator', creatorProtectedRouter);
 app.use('/api', ragRouter(store));
 app.use('/api', rolesRouter());
 app.use('/api', agentsRouter(store));
+// Apply stricter rate limit to agent execution endpoint BEFORE the router
+app.use('/api/agent/execute', executeLimiter);
 app.use('/api', agentRouter(store));
 app.use('/api', createConfigsRouter(new ConfigStore(store.getDatabase())));
-
-// Apply stricter rate limit to agent execution endpoint
-app.use('/api/agent/execute', executeLimiter);
 app.use('/api', hooksRouter(commitApprovals));
 app.use('/api', memoryRouter(executionContext));
 app.use('/api', pipelineRouter(store));

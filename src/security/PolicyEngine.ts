@@ -3,11 +3,11 @@ import { AuditLog } from './AuditLog.js';
 
 export interface PolicyRule {
   id: string;
-  roles?: string[];     // If empty/undefined, applies to all roles
+  roles?: string[]; // If empty/undefined, applies to all roles
   action: 'allow' | 'deny';
   match: {
-    tool_pattern?: string;   // glob-like: "bash*", "execute_*"
-    args_contains?: string;  // substring in serialized args
+    tool_pattern?: string; // glob-like: "bash*", "execute_*"
+    args_contains?: string; // substring in serialized args
   };
   reason?: string;
 }
@@ -42,25 +42,27 @@ export class PolicyEngine {
         continue;
       }
 
-      let matches = false;
+      let toolMatches = !rule.match.tool_pattern; // true if no pattern (vacuous)
+      let argsMatches = !rule.match.args_contains; // true if no args pattern (vacuous)
 
       // Tool pattern matching (simple glob: * at end)
       if (rule.match.tool_pattern) {
         const pattern = rule.match.tool_pattern;
         if (pattern.endsWith('*')) {
-          matches = toolName.startsWith(pattern.slice(0, -1));
+          toolMatches = toolName.startsWith(pattern.slice(0, -1));
         } else {
-          matches = toolName === pattern;
+          toolMatches = toolName === pattern;
         }
       }
 
       // Args content matching
       if (rule.match.args_contains) {
         const serialized = JSON.stringify(args).toLowerCase();
-        if (serialized.includes(rule.match.args_contains.toLowerCase())) {
-          matches = true;
-        }
+        argsMatches = serialized.includes(rule.match.args_contains.toLowerCase());
       }
+
+      // Both conditions must match (AND logic) when both are specified
+      const matches = toolMatches && argsMatches;
 
       if (matches) {
         const decision: PolicyDecision = {

@@ -79,8 +79,13 @@ export class DbWorkerPool {
 
     worker.on('error', (err) => {
       logger.error({ err: err.message }, '[DbWorkerPool] Worker error');
-      // Reject all pending queries for this worker
+      // Reject all pending queries assigned to this worker
       entry.busy = false;
+      for (const [id, p] of this.pending) {
+        p.reject(new StoreError(ErrorCodes.STORE_QUERY_FAILED, `Worker error: ${err.message}`, 500));
+        this.pending.delete(id);
+      }
+      this.processQueue();
     });
 
     worker.on('exit', (code) => {
