@@ -93,7 +93,11 @@ export function isAdminBypassActive(requestId?: string): boolean {
 
 // --- Command Parsing & Validation ---
 
+// Shell metacharacters that indicate injection attempts
+const SHELL_METACHAR_PATTERN = /[\$`\(\)<>\n\r\x00\\]/;
+
 function parseCommand(cmd: string): { binary: string; fullCmd: string }[] {
+  // Split on pipe, semicolon, ampersand (command chaining)
   return cmd.split(/\s*[|;&]\s*/).map(s => s.trim()).filter(Boolean).map(seg => {
     const parts = seg.split(/\s+/);
     return { binary: parts[0] ?? '', fullCmd: seg };
@@ -103,13 +107,26 @@ function parseCommand(cmd: string): { binary: string; fullCmd: string }[] {
 export function validateCommand(command: string): { allowed: boolean; reason?: string } {
   const segments = parseCommand(command);
   if (segments.length === 0) return { allowed: false, reason: 'Empty command' };
+
+  // Block shell metacharacters in the entire command (prevents subshells, backticks, etc.)
+  if (SHELL_METACHAR_PATTERN.test(command)) {
+    return { allowed: false, reason: 'Command contains shell metacharacters (possible injection)' };
+  }
+
   for (const { binary, fullCmd } of segments) {
     const entry = policy.allowed_commands.entries.find(e => e.binary === binary);
     if (!entry) return { allowed: false, reason: `Binary "${binary}" not in allowlist` };
     if (entry.allowed_args.length > 0) {
       const argsStr = fullCmd.slice(binary.length).trim();
-      if (argsStr.length > 0 && !entry.allowed_args.some(p => argsStr.startsWith(p))) {
-        return { allowed: false, reason: `Arguments "${argsStr}" not allowed for "${binary}". Permitted: ${entry.allowed_args.join(', ')}` };
+      if (argsStr.length > 0) {
+        // Exact match: args must exactly match one of the allowed patterns,
+        // OR match as a complete prefix followed by a space (word boundary)
+        const isAllowed = entry.allowed_args.some(p =>
+          argsStr === p || argsStr.startsWith(p + ' ')
+        );
+        if (!isAllowed) {
+          return { allowed: false, reason: `Arguments "${argsStr}" not allowed for "${binary}". Permitted: ${entry.allowed_args.join(', ')}` };
+        }
       }
     }
   }
