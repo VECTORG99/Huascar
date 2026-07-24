@@ -4,11 +4,12 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { config } from './config.js';
-import { Store } from './engine/Store.js';
+import { createStore, Store } from './engine/Store.js';
 import { creatorProtectedRouter, creatorPublicRouter } from './creator/router.js';
 import { requireAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
+import { enforceJsonContentType, validatePathParams } from './middleware/validation.js';
 import { agentRouter } from './routes/agent.js';
 import { agentsRouter } from './routes/agents.js';
 import { healthRouter } from './routes/health.js';
@@ -30,7 +31,7 @@ import { logger } from './logger.js';
 import { commitApprovals } from './services/approvals.js';
 
 export const app = express();
-export const store = new Store();
+export const store: Store = createStore();
 export const metricsState = createMetricsState();
 export const debugState = createDebugState();
 export const executionContext = new ExecutionContext(store);
@@ -43,13 +44,8 @@ app.use(
   }),
 );
 
-// Strict Content-Type enforcement for mutation requests
-app.use((req, res, next) => {
-  if (['POST', 'PUT', 'PATCH'].includes(req.method) && !req.is('application/json')) {
-    return res.status(415).json({ error: 'Content-Type must be application/json' });
-  }
-  next();
-});
+// Strict Content-Type enforcement for mutation requests (#249 — handles charset params)
+app.use(enforceJsonContentType);
 
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173')
   .split(',')
@@ -72,6 +68,9 @@ app.use(
   }),
 );
 app.use(express.json({ limit: '128kb' }));
+
+// Path parameter validation for all routes (#278)
+app.use(validatePathParams);
 
 // --- Rate Limiting ---
 const globalLimiter = rateLimit({

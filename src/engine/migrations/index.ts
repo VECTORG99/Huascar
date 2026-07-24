@@ -6,6 +6,7 @@ import { createSessions } from './004_create_sessions.js';
 import { createAgents } from './005_create_agents.js';
 import { createAgentConfigs } from './006_create_agent_configs.js';
 import { createMemoryStore } from './007_create_memory_store.js';
+import { executionContextAndSoftDelete } from './008_execution_context_and_soft_delete.js';
 
 export const initialMigrations: Migration[] = [
   createExecutions,
@@ -15,4 +16,5 @@ export const initialMigrations: Migration[] = [
   createAgents,
   createAgentConfigs,
   createMemoryStore,
+  executionContextAndSoftDelete,
 ];

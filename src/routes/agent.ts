@@ -4,6 +4,7 @@ import type { Store } from '../engine/Store.js';
 import { SessionManager } from '../engine/SessionManager.js';
 import { ApiError, ErrorCodes, formatError } from '../errors.js';
 import { config } from '../config.js';
+import { trackExecution, untrackExecution } from '../shutdown.js';
 
 type EngineClass = new (role: string, store: Store) => Pick<HuascarEngine, 'executeTask' | 'cancelAll'>;
 
@@ -74,6 +75,9 @@ function writeSse(res: Response, event: string, data: unknown, closed: () => boo
   return true;
 }
 
+/** SSE heartbeat interval in ms (#259) */
+const SSE_HEARTBEAT_INTERVAL_MS = 20_000;
+
 export function agentRouter(store: Store, Engine: EngineClass = HuascarEngine): Router {
   const router = Router();
   router.post('/agent/execute', async (req, res, next) => {
@@ -88,6 +92,7 @@ export function agentRouter(store: Store, Engine: EngineClass = HuascarEngine): 
       if (!signal.aborted) controller.abort('Execution timeout');
     }, config.server.requestTimeoutMs);
 
+    const execId = trackExecution();
     try {
       const result = await executeAgent(
         store,
@@ -111,6 +116,7 @@ export function agentRouter(store: Store, Engine: EngineClass = HuascarEngine): 
     } finally {
       clearTimeout(execTimeout);
       req.off('close', onClose);
+      untrackExecution(execId);
     }
   });
 
@@ -137,10 +143,21 @@ export function agentRouter(store: Store, Engine: EngineClass = HuascarEngine): 
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
 
+    // SSE keepalive heartbeat (#259) — prevents proxy/LB timeouts
+    const heartbeat = setInterval(() => {
+      if (closed || res.destroyed || res.writableEnded) {
+        clearInterval(heartbeat);
+        return;
+      }
+      res.write(': heartbeat\n\n');
+    }, SSE_HEARTBEAT_INTERVAL_MS);
+
     const end = () => {
+      clearInterval(heartbeat);
       if (!closed && !res.writableEnded && !res.destroyed) res.end();
     };
 
+    const execId = trackExecution();
     try {
       const result = await executeAgent(
         store,
@@ -167,6 +184,7 @@ export function agentRouter(store: Store, Engine: EngineClass = HuascarEngine): 
       end();
     } finally {
       clearTimeout(execTimeout);
+      untrackExecution(execId);
     }
   });
   return router;

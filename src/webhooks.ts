@@ -3,6 +3,8 @@
  *
  * Configure webhooks via WEBHOOK_URL env var (comma-separated for multiple).
  * Events: execution.started, execution.completed, execution.failed
+ *
+ * SSRF validation is performed at send time (#248), not just at module load.
  */
 
 import { logger } from './logger.js';
@@ -19,28 +21,29 @@ export interface WebhookEvent {
   };
 }
 
-const RAW_URLS = (process.env.WEBHOOK_URLS || '')
-  .split(',')
-  .map((u) => u.trim())
-  .filter(Boolean);
 const WEBHOOK_TIMEOUT_MS = 5000;
 
-// Validate webhook URLs at module load — block SSRF-vulnerable URLs
-const WEBHOOK_URLS: string[] = [];
-for (const url of RAW_URLS) {
-  if (isBlockedUrl(url)) {
-    logger.warn({ url }, '[Webhook] Blocked SSRF-vulnerable webhook URL from configuration');
-  } else {
-    WEBHOOK_URLS.push(url);
-  }
+/** Parse configured webhook URLs from environment. */
+function getWebhookUrls(): string[] {
+  return (process.env.WEBHOOK_URLS || '')
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean);
 }
 
 export async function emitWebhook(event: WebhookEvent): Promise<void> {
-  if (WEBHOOK_URLS.length === 0) return;
+  const urls = getWebhookUrls();
+  if (urls.length === 0) return;
 
   const payload = JSON.stringify(event);
 
-  for (const url of WEBHOOK_URLS) {
+  for (const url of urls) {
+    // Validate at send time to catch dynamically configured SSRF-vulnerable URLs (#248)
+    if (isBlockedUrl(url)) {
+      logger.warn({ url }, '[Webhook] Blocked SSRF-vulnerable webhook URL at send time');
+      continue;
+    }
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);

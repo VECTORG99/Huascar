@@ -11,6 +11,8 @@ import type { JSONSchema7 } from 'json-schema';
 import { generateTextWithFallback } from './LlmProvider.js';
 import { runMockScenario } from './MockProvider.js';
 import { ConfigCache } from './ConfigCache.js';
+import { ToolResultCache } from './ToolResultCache.js';
+import { withSpan } from '../telemetry.js';
 
 interface RagConfig {
   knowledge_bases: RagSource[];
@@ -64,12 +66,14 @@ export interface HuascarEngineDeps {
   rag?: RagEngine;
   mcpPool?: { getConnections(): Promise<ConnectedMcpClient[]>; closeAll?(): Promise<void> };
   generateTextWithFallback?: typeof generateTextWithFallback;
+  toolResultCache?: ToolResultCache;
 }
 
 export function buildAiTools(
   mcpClients: ConnectedMcpClient[],
   hooks: AgentHooks = agentHooks,
   onToolExecution?: (toolName: string) => void,
+  toolCache?: ToolResultCache,
 ): ToolSet {
   const aiTools: ToolSet = {};
 
@@ -83,6 +87,15 @@ export function buildAiTools(
           const toolArgs = args as Record<string, unknown>;
           onToolExecution?.(toolName);
           hooks.before_action(toolName, toolArgs);
+
+          // Check ToolResultCache before executing (#277)
+          if (toolCache) {
+            const cached = toolCache.get(toolName, toolArgs);
+            if (cached !== null) {
+              logger.info(`[HuascarEngine] Cache hit for "${toolName}"`);
+              return cached;
+            }
+          }
 
           const timeoutMs = config.react.mcpTimeoutMs;
           let timer: ReturnType<typeof setTimeout> | undefined;
@@ -109,6 +122,10 @@ export function buildAiTools(
               .join('\n');
             if (toolResult.length > config.react.toolResultMaxChars) {
               toolResult = toolResult.slice(0, config.react.toolResultMaxChars) + '\n... [truncado]';
+            }
+            // Store in cache (#277)
+            if (toolCache) {
+              toolCache.set(toolName, toolArgs, toolResult);
             }
             logger.info(`[HuascarEngine] Herramienta "${toolName}" ejecutada correctamente`);
             return toolResult;
@@ -143,6 +160,7 @@ export class HuascarEngine {
   private roleKey: string;
   private deps: Required<Pick<HuascarEngineDeps, 'readFile' | 'exists' | 'mcpPool' | 'generateTextWithFallback'>>;
   private hasCustomReadFile: boolean;
+  private toolCache: ToolResultCache;
 
   constructor(roleKey: string, store?: Store);
   constructor(roleKey: string, deps?: HuascarEngineDeps);
@@ -163,6 +181,7 @@ export class HuascarEngine {
       deps.rag ??
       new RagEngine({ maxContentChars: config.rag.maxContentChars, encoding: config.rag.encoding, store: deps.store });
     this.store = deps.store || null;
+    this.toolCache = deps.toolResultCache ?? new ToolResultCache();
   }
 
   private async connectMcpServers(): Promise<void> {
@@ -207,110 +226,104 @@ export class HuascarEngine {
     mockScenario?: string,
     signal?: AbortSignal,
   ) {
-    const registeredRole = registeredSteeringRole(agentConfig?.steering, this.roleKey);
-    const steeringRole = this.steering.roles[this.roleKey];
-    if (registeredRole) {
-      this.activeRole = registeredRole;
-    } else if (!steeringRole) {
-      if (systemPrompt) {
-        this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
+    return withSpan('engine.executeTask', { role: this.roleKey, taskLength: task.length }, async () => {
+      const registeredRole = registeredSteeringRole(agentConfig?.steering, this.roleKey);
+      const steeringRole = this.steering.roles[this.roleKey];
+      if (registeredRole) {
+        this.activeRole = registeredRole;
+      } else if (!steeringRole) {
+        if (systemPrompt) {
+          this.activeRole = { name: this.roleKey, system_prompt: systemPrompt, temperature: 0.3 };
+        } else {
+          throw new EngineError(
+            ErrorCodes.ENGINE_ROLE_NOT_FOUND,
+            `El rol '${this.roleKey}' no existe en steering.json`,
+            404,
+          );
+        }
       } else {
-        throw new EngineError(
-          ErrorCodes.ENGINE_ROLE_NOT_FOUND,
-          `El rol '${this.roleKey}' no existe en steering.json`,
-          404,
-        );
+        this.activeRole = steeringRole;
       }
-    } else {
-      this.activeRole = steeringRole;
-    }
-    logger.info(`\n[HuascarEngine] Iniciando LLM ReAct Loop...`);
-    logger.info(`[HuascarEngine] Rol activo: ${this.activeRole.name}`);
-    logger.info(`[HuascarEngine] Tarea: ${task}`);
+      logger.info(`\n[HuascarEngine] Iniciando LLM ReAct Loop...`);
+      logger.info(`[HuascarEngine] Rol activo: ${this.activeRole.name}`);
+      logger.info(`[HuascarEngine] Tarea: ${task}`);
 
-    try {
-      const useMock = config.llm.mockMode || !config.hasLlmProvider;
+      try {
+        const useMock = config.llm.mockMode || !config.hasLlmProvider;
 
-      if (!useMock) {
-        await this.connectMcpServers();
+        if (!useMock) {
+          await withSpan('engine.connectMcp', { role: this.roleKey }, () => this.connectMcpServers());
+          await withSpan('engine.loadRag', { role: this.roleKey }, () => this.loadRagSources());
 
-        await this.loadRagSources();
-
-        // Apply optional agent config (from questionnaire) on top of base settings
-        if (agentConfig) {
-          // Tool selection enforcement (fail-closed):
-          // - tools: undefined → use all available tools (default)
-          // - tools: [] → disable ALL tools (explicit zero-tools mode)
-          // - tools: ['a','b'] → only those tools available
-          if (agentConfig.tools !== undefined) {
-            const selectedTools = new Set(agentConfig.tools);
-            for (const c of this.mcpClients) {
-              c.tools = c.tools.filter((t) => selectedTools.has(t.name));
+          // Apply optional agent config (from questionnaire) on top of base settings
+          if (agentConfig) {
+            if (agentConfig.tools !== undefined) {
+              const selectedTools = new Set(agentConfig.tools);
+              for (const c of this.mcpClients) {
+                c.tools = c.tools.filter((t) => selectedTools.has(t.name));
+              }
+              const allAvailable = new Set(this.mcpClients.flatMap((c) => c.tools.map((t) => t.name)));
+              for (const requested of agentConfig.tools) {
+                if (!allAvailable.has(requested)) {
+                  logger.warn(`[HuascarEngine] Requested tool "${requested}" not found in any MCP server — ignored`);
+                }
+              }
+              logger.info(
+                `[HuascarEngine] Tool enforcement: ${selectedTools.size} selected, ${this.mcpClients.reduce((n, c) => n + c.tools.length, 0)} available after filter`,
+              );
             }
-            // Warn about unknown tool names requested by client
-            const allAvailable = new Set(this.mcpClients.flatMap((c) => c.tools.map((t) => t.name)));
-            for (const requested of agentConfig.tools) {
-              if (!allAvailable.has(requested)) {
-                logger.warn(`[HuascarEngine] Requested tool "${requested}" not found in any MCP server — ignored`);
+            if (agentConfig.knowledge && agentConfig.knowledge.length > 0) {
+              const safeSources = agentConfig.knowledge.filter((source) => {
+                if (source.type === 'inline') return true;
+                logger.warn(
+                  `[HuascarEngine] Blocked client-supplied RAG source type="${source.type}" — only inline allowed`,
+                );
+                return false;
+              });
+              if (safeSources.length > 0) {
+                await this.rag.loadSources(safeSources);
               }
             }
-            logger.info(
-              `[HuascarEngine] Tool enforcement: ${selectedTools.size} selected, ${this.mcpClients.reduce((n, c) => n + c.tools.length, 0)} available after filter`,
-            );
-          }
-          // Add knowledge sources from config
-          // Security: only allow 'inline' sources from client requests.
-          // local_file, local_directory, and web_url are restricted to server-side config
-          // (rag.json) or registered agent configs to prevent path traversal and SSRF.
-          if (agentConfig.knowledge && agentConfig.knowledge.length > 0) {
-            const safeSources = agentConfig.knowledge.filter((source) => {
-              if (source.type === 'inline') return true;
-              logger.warn(
-                `[HuascarEngine] Blocked client-supplied RAG source type="${source.type}" — only inline allowed`,
-              );
-              return false;
-            });
-            if (safeSources.length > 0) {
-              await this.rag.loadSources(safeSources);
-            }
-          }
 
-          // Apply security controls from agent config
-          if (agentConfig.security) {
-            if (agentConfig.security.block_destructive_commands) {
-              logger.info('[HuascarEngine] Security: destructive command blocking enforced by client request');
-            }
-            if (agentConfig.security.require_commit_approval) {
-              this.requireCommitApproval = true;
-              logger.info('[HuascarEngine] Security: commit approval required for this execution');
+            if (agentConfig.security) {
+              if (agentConfig.security.block_destructive_commands) {
+                logger.info('[HuascarEngine] Security: destructive command blocking enforced by client request');
+              }
+              if (agentConfig.security.require_commit_approval) {
+                this.requireCommitApproval = true;
+                logger.info('[HuascarEngine] Security: commit approval required for this execution');
+              }
             }
           }
         }
-      }
 
-      const effectiveTask = sessionContext ? `${sessionContext}\n\nTarea actual:\n${task}` : task;
-      const ragContext = await this.rag.getContext(effectiveTask);
-      const baseSystemPrompt = systemPrompt ?? this.activeRole.system_prompt;
-      const effectiveSystemPrompt = baseSystemPrompt + (ragContext ? '\n\n' + ragContext : '');
+        const effectiveTask = sessionContext ? `${sessionContext}\n\nTarea actual:\n${task}` : task;
+        const ragContext = await this.rag.getContext(effectiveTask);
+        const baseSystemPrompt = systemPrompt ?? this.activeRole.system_prompt;
+        const effectiveSystemPrompt = baseSystemPrompt + (ragContext ? '\n\n' + ragContext : '');
 
-      const responseText = !useMock
-        ? await this.runReActLoop(effectiveSystemPrompt, effectiveTask, signal)
-        : await this.runMockReActLoop(effectiveTask, mockScenario);
+        const responseText = !useMock
+          ? await withSpan('engine.reactLoop', { role: this.roleKey }, () =>
+              this.runReActLoop(effectiveSystemPrompt, effectiveTask, signal),
+            )
+          : await this.runMockReActLoop(effectiveTask, mockScenario);
 
-      if (this.store) {
-        try {
-          this.store.saveExecution(this.activeRole.name, task, responseText);
-        } catch (err) {
-          logger.warn({ err }, '[HuascarEngine] Error guardando ejecucion');
+        if (this.store) {
+          try {
+            this.store.saveExecution(this.activeRole.name, task, responseText);
+          } catch (err) {
+            logger.warn({ err }, '[HuascarEngine] Error guardando ejecucion');
+          }
         }
-      }
 
-      return { status: 'success', agent_role: this.activeRole.name, response: responseText };
-    } catch (error: unknown) {
-      return { status: 'blocked', error: error instanceof Error ? error.message : String(error) };
-    } finally {
-      await this.disconnectMcpServers();
-    }
+        return { status: 'success', agent_role: this.activeRole.name, response: responseText };
+      } catch (error: unknown) {
+        return { status: 'blocked', error: error instanceof Error ? error.message : String(error) };
+      } finally {
+        await this.disconnectMcpServers();
+        this.toolCache.clear();
+      }
+    });
   }
 
   private async runReActLoop(systemPrompt: string, task: string, signal?: AbortSignal): Promise<string> {
@@ -320,9 +333,14 @@ export class HuascarEngine {
       {
         system: systemPrompt,
         prompt: task,
-        tools: buildAiTools(this.mcpClients, agentHooks, () => {
-          toolExecuted = true;
-        }),
+        tools: buildAiTools(
+          this.mcpClients,
+          agentHooks,
+          () => {
+            toolExecuted = true;
+          },
+          this.toolCache,
+        ),
         stopWhen: isStepCount(config.react.maxIterations),
       },
       undefined,

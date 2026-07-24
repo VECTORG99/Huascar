@@ -1,9 +1,13 @@
 /**
  * Config versioning and rollback store.
  * Each config save creates a new version; only one version is active per name.
+ * Prunes versions beyond MAX_VERSIONS_PER_CONFIG (#261).
  */
 import type Database from 'better-sqlite3';
 import { logger } from '../logger.js';
+
+/** Maximum version history per config name (#261) */
+const MAX_VERSIONS_PER_CONFIG = 50;
 
 export interface ConfigVersion {
   id: number;
@@ -29,6 +33,7 @@ export class ConfigStore {
 
   /**
    * Save a new config version. Automatically increments version number.
+   * Prunes oldest versions beyond MAX_VERSIONS_PER_CONFIG (#261).
    */
   save(name: string, configJson: unknown): ConfigVersion {
     const json = typeof configJson === 'string' ? configJson : JSON.stringify(configJson);
@@ -47,7 +52,33 @@ export class ConfigStore {
       logger.info({ name, version: nextVersion }, '[ConfigStore] First version auto-activated');
     }
 
+    // Prune oldest versions beyond limit (#261)
+    this.pruneVersions(name);
+
     return this.getVersion(name, nextVersion)!;
+  }
+
+  /**
+   * Remove oldest versions that exceed MAX_VERSIONS_PER_CONFIG.
+   * Never removes the active version.
+   */
+  private pruneVersions(name: string): void {
+    const count = (this.db.prepare('SELECT COUNT(*) as c FROM agent_configs WHERE name = ?').get(name) as { c: number })
+      .c;
+    if (count <= MAX_VERSIONS_PER_CONFIG) return;
+
+    const pruneCount = count - MAX_VERSIONS_PER_CONFIG;
+    const pruned = this.db
+      .prepare(
+        `DELETE FROM agent_configs WHERE name = ? AND active = 0 AND version IN (
+        SELECT version FROM agent_configs WHERE name = ? AND active = 0 ORDER BY version ASC LIMIT ?
+      )`,
+      )
+      .run(name, name, pruneCount).changes;
+
+    if (pruned > 0) {
+      logger.info({ name, pruned }, '[ConfigStore] Pruned old versions');
+    }
   }
 
   /**

@@ -147,8 +147,23 @@ function isFileAllowed(filePath: string): boolean {
   return true;
 }
 
+/**
+ * Validate OpenAI API key format (#275).
+ * Must start with 'sk-' and be between 20 and 200 characters.
+ */
+export function validateOpenAiKeyFormat(key: string | undefined): boolean {
+  if (!key) return false;
+  if (!key.startsWith('sk-')) return false;
+  if (key.length < 20 || key.length > 200) return false;
+  return true;
+}
+
 /** Call OpenAI embedding API directly via fetch. Batching supported. */
 async function getEmbeddings(inputs: string[], model: string): Promise<number[][]> {
+  const apiKey = process.env.OPENAI_API_KEY || '';
+  if (apiKey && !validateOpenAiKeyFormat(apiKey)) {
+    logger.warn('[RagEngine] OpenAI API key has unexpected format (expected sk-*, 20-200 chars)');
+  }
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), 10000);
   try {
@@ -156,7 +171,7 @@ async function getEmbeddings(inputs: string[], model: string): Promise<number[][
       method: 'POST',
       signal: abort.signal,
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ model, input: inputs }),

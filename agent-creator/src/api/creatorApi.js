@@ -1,3 +1,11 @@
+import {
+  validateCatalogResponse,
+  validateWorkflowResponse,
+  validateTutorialResponse,
+  validateEvaluateResponse,
+  validatePreviewResponse,
+} from './validateResponse.js';
+
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 const API_KEY = import.meta.env.VITE_API_KEY || '';
 const CREATOR_BASE = `${API_URL}/api/v1/creator`;
@@ -25,7 +33,16 @@ async function request(path, options = {}) {
 
 export function loadCreatorDefinition() {
   return Promise.all([request('/catalog'), request('/workflow'), request('/tutorial')]).then(
-    ([catalog, workflow, tutorial]) => ({ catalog, workflow, tutorial }),
+    ([catalog, workflow, tutorial]) => {
+      // Validate response shapes (#288)
+      const validCatalog = validateCatalogResponse(catalog);
+      if (!validCatalog) throw new Error('Invalid catalog response from API');
+      const validWorkflow = validateWorkflowResponse(workflow);
+      if (!validWorkflow) throw new Error('Invalid workflow response from API');
+      const validTutorial = validateTutorialResponse(tutorial);
+      if (!validTutorial) throw new Error('Invalid tutorial response from API');
+      return { catalog: validCatalog, workflow: validWorkflow, tutorial: validTutorial };
+    },
   );
 }
 
@@ -37,6 +54,10 @@ export function evaluateCreator(answers, versions) {
       workflowVersion: versions.workflowVersion,
       catalogVersion: versions.catalogVersion,
     }),
+  }).then((data) => {
+    const valid = validateEvaluateResponse(data);
+    if (!valid) throw new Error('Invalid evaluate response from API');
+    return valid;
   });
 }
 
@@ -48,6 +69,10 @@ export function previewCreator(answers, versions) {
       workflowVersion: versions.workflowVersion,
       catalogVersion: versions.catalogVersion,
     }),
+  }).then((data) => {
+    const valid = validatePreviewResponse(data);
+    if (!valid) throw new Error('Invalid preview response from API');
+    return valid;
   });
 }
 
