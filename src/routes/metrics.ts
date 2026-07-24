@@ -61,12 +61,14 @@ export function metricsRouter(state: MetricsState): Router {
     const metricsToken = process.env.METRICS_SECRET;
     // Always require auth when METRICS_SECRET is configured (any environment)
     if (metricsToken) {
-      const provided = req.headers['x-metrics-token'] || req.query.token;
-      if (provided !== metricsToken) {
-        return res.status(401).json({ error: 'Unauthorized — provide X-Metrics-Token header or ?token= query param' });
+      const provided = String(req.headers['x-metrics-token'] || req.query.token || '');
+      // Timing-safe comparison to prevent token extraction via timing oracle
+      const tokenMatch = provided.length === metricsToken.length
+        && require('crypto').timingSafeEqual(Buffer.from(provided), Buffer.from(metricsToken));
+      if (!tokenMatch) {
+        return res.status(401).json({ error: 'Unauthorized' });
       }
-    } else if (process.env.NODE_ENV === 'production') {
-      // In production without METRICS_SECRET, deny all access
+    } else if ((process.env.NODE_ENV || '').toLowerCase() === 'production') {
       return res.status(403).json({ error: 'Metrics disabled — METRICS_SECRET not configured' });
     }
     const uptime = Math.floor((Date.now() - state.startTime) / 1000);
