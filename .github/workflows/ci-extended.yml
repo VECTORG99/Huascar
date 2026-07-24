@@ -42,7 +42,7 @@ jobs:
         continue-on-error: true
       - name: Verify backend starts
         run: |
-          docker run -d --name test-backend -e LLM_MOCK_MODE=true -e HUASCAR_DB_PATH=/tmp/test.db -p 3001:3001 huascar-backend:test
+          docker run -d --name test-backend -e LLM_MOCK_MODE=true -e HUASCAR_DB_PATH=/tmp/test.db -e AUTH_REQUIRED=false -p 3001:3001 huascar-backend:test
           for i in $(seq 1 30); do
             if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
               echo "Backend healthy after ${i}s"
