@@ -2,23 +2,29 @@ import type { AgentConfig, AgentRole, HistoryRecord } from "@/types/agent";
 import type { CreatorAnswers, CreatorCatalog, CreatorEvaluation, CreatorWorkflow, GeneratedAgentBundle, RegisteredAgent } from "@/types/creator";
 
 export const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+const apiKey = process.env.NEXT_PUBLIC_API_KEY || "";
+
+export function authHeaders(): Record<string, string> {
+  if (!apiKey) return {};
+  return { Authorization: `Bearer ${apiKey}` };
+}
 
 export async function getRoles(): Promise<AgentRole[] | null> {
-  const res = await fetch(`${apiUrl}/api/roles`);
+  const res = await fetch(`${apiUrl}/api/roles`, { headers: authHeaders() });
   if (!res.ok) return null;
   const data = await res.json();
   return Array.isArray(data?.roles) ? data.roles : null;
 }
 
 export async function getHistory(): Promise<HistoryRecord[]> {
-  const res = await fetch(`${apiUrl}/api/history`);
+  const res = await fetch(`${apiUrl}/api/history`, { headers: authHeaders() });
   const data = await res.json();
   return data.history || [];
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${apiUrl}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
     ...options
   });
   const data = await res.json().catch(() => null);

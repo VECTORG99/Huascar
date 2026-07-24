@@ -1,9 +1,15 @@
 const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/$/, "");
+const API_KEY = import.meta.env.VITE_API_KEY || "";
 const CREATOR_BASE = `${API_URL}/api/v1/creator`;
+
+function authHeaders() {
+  if (!API_KEY) return {};
+  return { Authorization: `Bearer ${API_KEY}` };
+}
 
 async function request(path, options = {}) {
   const response = await fetch(`${CREATOR_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...options.headers },
     ...options,
   });
   const data = await response.json().catch(() => null);
