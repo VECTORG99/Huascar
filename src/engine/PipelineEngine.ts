@@ -174,9 +174,9 @@ export class PipelineEngine {
     const evaluator = ALLOWED_CONDITIONS[trimmed];
     if (evaluator) return evaluator(previous);
 
-    // Unknown condition — log warning and default to execute
-    logger.warn({ condition }, '[PipelineEngine] Unknown condition pattern, defaulting to execute');
-    return true;
+    // Unknown condition — fail-closed: do NOT execute the step
+    logger.warn({ condition }, '[PipelineEngine] Unknown condition pattern, defaulting to SKIP (fail-closed)');
+    return false;
   }
 
   /**
