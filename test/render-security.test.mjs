@@ -30,6 +30,6 @@ describe('Render deployment security (issue #286)', () => {
 
   it('frontend api.ts falls back to empty string (relative path)', () => {
     const apiTs = fs.readFileSync(path.resolve('frontend/src/lib/api.ts'), 'utf8');
-    assert.match(apiTs, /process\.env\.NEXT_PUBLIC_API_URL \|\| ""/);
+    assert.match(apiTs, /process\.env\.NEXT_PUBLIC_API_URL \|\| ['"]{2}/);
   });
 });
