@@ -53,7 +53,12 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:30
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (server-to-server, curl, health checks)
+      // Allow requests with no origin ONLY for server-to-server/curl (non-browser)
+      // Block 'null' origin explicitly (file://, sandboxed iframes)
+      if (origin === 'null') {
+        callback(new Error('null origin not allowed'));
+        return;
+      }
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
