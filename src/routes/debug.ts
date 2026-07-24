@@ -1,9 +1,11 @@
 /**
- * Debug tooling routes — only available in development mode.
- * Provides request inspector, timing breakdown, and request replay.
+ * Debug tooling routes — ONLY available in non-production environments.
+ * Provides request inspector and timing breakdown for development.
+ *
+ * Security: case-insensitive production check, auto-purge after TTL,
+ * replay endpoint removed (use /api/agent/execute directly).
  */
 import { Router, type RequestHandler } from 'express';
-import type { Store } from '../engine/Store.js';
 
 export interface DebugRequest {
   id: string;
@@ -13,12 +15,27 @@ export interface DebugRequest {
   timestamp: number;
   durationMs: number;
   statusCode: number;
-  phases?: Record<string, number>;
 }
 
-const MAX_DEBUG_REQUESTS = 100;
-const MAX_DEBUG_BODY_SIZE = 2048;
-const SENSITIVE_KEYS = new Set(['password', 'secret', 'token', 'api_key', 'apiKey', 'authorization', 'credentials']);
+const MAX_DEBUG_REQUESTS = 50;
+const MAX_DEBUG_BODY_SIZE = 1024;
+const DEBUG_TTL_MS = 10 * 60 * 1000; // 10 minutes auto-purge
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'secret',
+  'token',
+  'api_key',
+  'apikey',
+  'authorization',
+  'credentials',
+  'bypass_secret',
+  'system_prompt',
+]);
+
+/** Case-insensitive production check */
+function isProduction(): boolean {
+  return (process.env.NODE_ENV || '').toLowerCase() === 'production';
+}
 
 function redactBody(body: unknown): unknown {
   if (!body || typeof body !== 'object') return body;
@@ -38,7 +55,7 @@ function redactBody(body: unknown): unknown {
 export function createDebugState() {
   return {
     requests: [] as DebugRequest[],
-    enabled: process.env.NODE_ENV !== 'production',
+    enabled: !isProduction(),
   };
 }
 
@@ -46,6 +63,7 @@ export type DebugState = ReturnType<typeof createDebugState>;
 
 /**
  * Middleware that records request timing for debug inspection.
+ * Returns a no-op if debug is disabled (production).
  */
 export function debugMiddleware(state: DebugState): RequestHandler {
   return (req, res, next) => {
@@ -69,33 +87,32 @@ export function debugMiddleware(state: DebugState): RequestHandler {
       if (state.requests.length > MAX_DEBUG_REQUESTS) {
         state.requests.length = MAX_DEBUG_REQUESTS;
       }
-    });
 
-    // Attach timing helper to response for downstream use
-    (res as unknown as Record<string, unknown>).__debug_id = id;
-    (res as unknown as Record<string, unknown>).__debug_start = startTime;
+      // TTL auto-purge: remove entries older than DEBUG_TTL_MS
+      const cutoff = Date.now() - DEBUG_TTL_MS;
+      state.requests = state.requests.filter((r) => r.timestamp > cutoff);
+    });
 
     next();
   };
 }
 
 /**
- * Debug routes — disabled in production.
+ * Debug routes — completely disabled in production.
+ * Does NOT include replay functionality (security risk).
  */
-export function debugRouter(state: DebugState, store?: Store): Router {
+export function debugRouter(state: DebugState): Router {
   const router = Router();
 
-  // Guard: disable all debug routes in production
+  // Guard: reject all debug requests in production (case-insensitive)
   router.use((_req, res, next) => {
-    if (!state.enabled) {
-      return res.status(404).json({ error: 'Debug routes disabled in production' });
+    if (!state.enabled || isProduction()) {
+      return res.status(404).json({ error: 'Not found' });
     }
     next();
   });
 
-  /**
-   * GET /api/debug/requests - Last N requests with timing breakdown
-   */
+  /** GET /api/debug/requests - Last N requests with timing */
   router.get('/debug/requests', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, MAX_DEBUG_REQUESTS);
     res.json({
@@ -104,51 +121,20 @@ export function debugRouter(state: DebugState, store?: Store): Router {
     });
   });
 
-  /**
-   * GET /api/debug/requests/:id - Single request detail
-   */
+  /** GET /api/debug/requests/:id - Single request detail */
   router.get('/debug/requests/:id', (req, res) => {
     const entry = state.requests.find((r) => r.id === req.params.id);
     if (!entry) return res.status(404).json({ error: 'Request not found' });
     res.json(entry);
   });
 
-  /**
-   * POST /api/debug/replay/:executionId - Replay a past execution
-   */
-  router.post('/debug/replay/:executionId', async (req, res) => {
-    if (!store) return res.status(501).json({ error: 'Store not available for replay' });
-
-    try {
-      const history = store.getHistory(100);
-      const execution = history.find((h) => String(h.id) === req.params.executionId);
-      if (!execution) return res.status(404).json({ error: 'Execution not found' });
-
-      res.json({
-        replay: {
-          originalId: execution.id,
-          role: execution.role,
-          task: execution.task,
-          originalResponse: execution.response.slice(0, 500),
-          replayedAt: new Date().toISOString(),
-          note: 'Replay requires calling /api/agent/execute with the original task/role',
-        },
-      });
-    } catch (err: unknown) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Replay failed' });
-    }
-  });
-
-  /**
-   * GET /api/debug/stats - System statistics
-   */
+  /** GET /api/debug/stats - Limited system statistics (no version fingerprinting) */
   router.get('/debug/stats', (_req, res) => {
     res.json({
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      nodeVersion: process.version,
-      env: process.env.NODE_ENV || 'development',
+      uptime: Math.floor(process.uptime()),
       debugRequestsCaptured: state.requests.length,
+      maxRequests: MAX_DEBUG_REQUESTS,
+      ttlMs: DEBUG_TTL_MS,
     });
   });
 

@@ -27,20 +27,25 @@ if (AUTH_REQUIRED && API_KEYS.length === 0) {
     logger.fatal('AUTH_REQUIRED=true but no HUASCAR_API_KEYS configured — cannot start in production without API keys');
     process.exit(1);
   } else {
-    logger.warn('AUTH_REQUIRED is enabled but no HUASCAR_API_KEYS configured — set AUTH_REQUIRED=false for local development or configure keys');
+    logger.warn(
+      'AUTH_REQUIRED is enabled but no HUASCAR_API_KEYS configured — set AUTH_REQUIRED=false for local development or configure keys',
+    );
   }
 }
 
-/** Timing-safe token comparison to prevent timing attacks */
+/** Timing-safe token comparison — constant-time regardless of key lengths.
+ * Uses HMAC-SHA256 to normalize to fixed-length digests before comparison,
+ * preventing key length oracle attacks via timing differences. */
 function isValidToken(provided: string): boolean {
+  const providedHash = crypto.createHmac('sha256', 'huascar-auth').update(provided).digest();
+  let valid = false;
   for (const key of API_KEYS) {
-    if (provided.length === key.length) {
-      if (crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(key))) {
-        return true;
-      }
+    const keyHash = crypto.createHmac('sha256', 'huascar-auth').update(key).digest();
+    if (crypto.timingSafeEqual(providedHash, keyHash)) {
+      valid = true;
     }
   }
-  return false;
+  return valid;
 }
 
 function extractToken(req: Request): string | null {

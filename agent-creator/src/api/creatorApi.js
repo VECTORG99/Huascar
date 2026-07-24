@@ -1,9 +1,15 @@
-const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/$/, "");
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+const API_KEY = import.meta.env.VITE_API_KEY || '';
 const CREATOR_BASE = `${API_URL}/api/v1/creator`;
+
+function authHeaders() {
+  if (!API_KEY) return {};
+  return { Authorization: `Bearer ${API_KEY}` };
+}
 
 async function request(path, options = {}) {
   const response = await fetch(`${CREATOR_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options.headers },
     ...options,
   });
   const data = await response.json().catch(() => null);
@@ -18,16 +24,14 @@ async function request(path, options = {}) {
 }
 
 export function loadCreatorDefinition() {
-  return Promise.all([
-    request("/catalog"),
-    request("/workflow"),
-    request("/tutorial"),
-  ]).then(([catalog, workflow, tutorial]) => ({ catalog, workflow, tutorial }));
+  return Promise.all([request('/catalog'), request('/workflow'), request('/tutorial')]).then(
+    ([catalog, workflow, tutorial]) => ({ catalog, workflow, tutorial }),
+  );
 }
 
 export function evaluateCreator(answers, versions) {
-  return request("/evaluate", {
-    method: "POST",
+  return request('/evaluate', {
+    method: 'POST',
     body: JSON.stringify({
       answers,
       workflowVersion: versions.workflowVersion,
@@ -37,8 +41,8 @@ export function evaluateCreator(answers, versions) {
 }
 
 export function previewCreator(answers, versions) {
-  return request("/preview", {
-    method: "POST",
+  return request('/preview', {
+    method: 'POST',
     body: JSON.stringify({
       answers,
       workflowVersion: versions.workflowVersion,

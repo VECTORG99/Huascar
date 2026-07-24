@@ -118,7 +118,7 @@ app.use((_req, res, next) => {
 app.use('/api/v1/creator', creatorLimiter, creatorPublicRouter);
 
 app.use(metricsMiddleware(metricsState));
-app.use(debugMiddleware(debugState));
+if (debugState.enabled) app.use(debugMiddleware(debugState));
 app.use('/api', metricsRouter(metricsState));
 app.use('/api', healthRouter);
 app.use('/api', mcpStatusRouter);
@@ -143,7 +143,7 @@ app.use('/api', createConfigsRouter(new ConfigStore(store.getDatabase())));
 app.use('/api', hooksRouter(commitApprovals));
 app.use('/api', memoryRouter(executionContext));
 app.use('/api', pipelineRouter(store));
-app.use('/api', debugRouter(debugState, store));
+if (debugState.enabled) app.use('/api', debugRouter(debugState));
 
 app.use(notFound);
 app.use(errorHandler);
