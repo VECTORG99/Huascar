@@ -385,8 +385,9 @@ describe('Graceful shutdown in-flight tracking (#285)', () => {
   it('waitForInFlight waits for executions then times out', async () => {
     const id = trackExecution();
     const start = Date.now();
-    await waitForInFlight(500); // short timeout for test
-    assert.ok(Date.now() - start >= 450);
+    await waitForInFlight(100); // short timeout for test
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed >= 80, `Expected >= 80ms, got ${elapsed}ms`);
     untrackExecution(id); // cleanup
   });
 });
@@ -435,15 +436,15 @@ describe('Migration rollback (#287)', () => {
 });
 
 // #288 — Frontend API response validation
-describe('Frontend API response validation (#288)', async () => {
-  const {
-    validateCatalogResponse,
-    validateWorkflowResponse,
-    validateTutorialResponse,
-    validateEvaluateResponse,
-    validatePreviewResponse,
-  } = await import('../agent-creator/src/api/validateResponse.js');
+const validateResponseModule = await import('../agent-creator/src/api/validateResponse.js');
+const {
+  validateCatalogResponse,
+  validateWorkflowResponse,
+  validateEvaluateResponse,
+  validatePreviewResponse,
+} = validateResponseModule;
 
+describe('Frontend API response validation (#288)', () => {
   it('validates valid catalog response', () => {
     const result = validateCatalogResponse({ version: '1.0.0', categories: {} });
     assert.ok(result);
