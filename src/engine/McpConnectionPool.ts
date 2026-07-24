@@ -40,14 +40,40 @@ export class McpConnectionPool {
   private connections = new Map<string, ConnectedMcpClient>();
   private loading: Promise<ConnectedMcpClient[]> | null = null;
   private serverErrors = new Map<string, string>();
+  private lastUsed = new Map<string, number>();
+  private idleTimer: ReturnType<typeof setInterval> | undefined;
+  private static IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min idle → close
 
-  constructor(private readonly connectMcpServer: ConnectMcpServer = defaultConnectMcpServer) {}
+  constructor(private readonly connectMcpServer: ConnectMcpServer = defaultConnectMcpServer) {
+    // Periodically check for idle connections
+    this.idleTimer = setInterval(() => this.closeIdleConnections(), 60_000);
+    this.idleTimer.unref(); // Don't prevent process exit
+  }
+
+  private async closeIdleConnections(): Promise<void> {
+    const now = Date.now();
+    for (const [name, client] of this.connections) {
+      const lastUse = this.lastUsed.get(name) ?? 0;
+      if (now - lastUse > McpConnectionPool.IDLE_TIMEOUT_MS) {
+        try {
+          await client.client.close();
+          await client.transport.close();
+        } catch { /* ignore */ }
+        this.connections.delete(name);
+        this.lastUsed.delete(name);
+        logger.info({ name }, '[McpConnectionPool] Closed idle connection');
+      }
+    }
+  }
 
   async getConnections(): Promise<ConnectedMcpClient[]> {
     if (this.loading) return this.loading;
     this.loading = this.loadConnections();
     try {
       const result = await this.loading;
+      // Track usage for idle timeout
+      const now = Date.now();
+      for (const c of result) this.lastUsed.set(c.name, now);
       return result;
     } finally {
       this.loading = null;
