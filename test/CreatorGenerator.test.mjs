@@ -25,7 +25,8 @@ describe('Creator generator', () => {
       'skills/frontend-quality-guardian/SKILL.md',
     ]) assert.ok(paths.includes(expected), `missing ${expected}`);
     assert.equal(bundle.blueprint.prReview.enabled, true);
-    assert.equal(bundle.manifest.artifactCount, bundle.artifacts.length);
+    assert.equal(bundle.manifest.artifactCount, bundle.manifest.files.length);
+    assert.equal(bundle.manifest.artifactCount, bundle.artifacts.length - 1); // manifest itself excluded from files list
     assert.ok(bundle.artifacts.every(artifact => /^[a-f0-9]{64}$/.test(artifact.sha256)));
   });
 

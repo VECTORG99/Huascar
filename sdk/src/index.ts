@@ -209,7 +209,16 @@ export class HuascarClient {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        // Generate and propagate X-Request-ID for log correlation
+        const requestId =
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID().slice(0, 8)
+            : Math.random().toString(36).slice(2, 10);
+        const headers = {
+          ...(options.headers as Record<string, string>),
+          'X-Request-ID': requestId,
+        };
+        const response = await fetch(url, { ...options, headers, signal: controller.signal });
         clearTimeout(timer);
 
         // Don't retry on 4xx (client errors)

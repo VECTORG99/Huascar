@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 
 export interface AuditEntry {
   timestamp: string;
@@ -14,10 +14,8 @@ export interface AuditEntry {
 export class AuditLog {
   private db: Database.Database;
 
-  constructor(dbPath?: string) {
-    const resolvedPath = dbPath || process.env.HUASCAR_DB_PATH || './data/huascar.db';
-    this.db = new Database(resolvedPath);
-    this.db.pragma('journal_mode = WAL');
+  constructor(db: Database.Database) {
+    this.db = db;
     this.init();
   }
 
@@ -51,17 +49,23 @@ export class AuditLog {
   }
 
   query(filters: { role?: string; decision?: string; since?: string; limit?: number }): AuditEntry[] {
-    let sql = 'SELECT timestamp, request_id, role, tool, args_hash, decision, rule_id, reason FROM security_audit WHERE 1=1';
+    let sql =
+      'SELECT timestamp, request_id, role, tool, args_hash, decision, rule_id, reason FROM security_audit WHERE 1=1';
     const params: unknown[] = [];
-    if (filters.role) { sql += ' AND role = ?'; params.push(filters.role); }
-    if (filters.decision) { sql += ' AND decision = ?'; params.push(filters.decision); }
-    if (filters.since) { sql += ' AND timestamp >= ?'; params.push(filters.since); }
+    if (filters.role) {
+      sql += ' AND role = ?';
+      params.push(filters.role);
+    }
+    if (filters.decision) {
+      sql += ' AND decision = ?';
+      params.push(filters.decision);
+    }
+    if (filters.since) {
+      sql += ' AND timestamp >= ?';
+      params.push(filters.since);
+    }
     sql += ' ORDER BY timestamp DESC LIMIT ?';
     params.push(filters.limit || 100);
     return this.db.prepare(sql).all(...params) as AuditEntry[];
-  }
-
-  close(): void {
-    this.db.close();
   }
 }

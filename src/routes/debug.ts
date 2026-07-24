@@ -17,6 +17,23 @@ export interface DebugRequest {
 }
 
 const MAX_DEBUG_REQUESTS = 100;
+const MAX_DEBUG_BODY_SIZE = 2048;
+const SENSITIVE_KEYS = new Set(['password', 'secret', 'token', 'api_key', 'apiKey', 'authorization', 'credentials']);
+
+function redactBody(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return body;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+      redacted[key] = '[REDACTED]';
+    } else if (typeof value === 'string' && value.length > MAX_DEBUG_BODY_SIZE) {
+      redacted[key] = value.slice(0, MAX_DEBUG_BODY_SIZE) + '...[truncated]';
+    } else {
+      redacted[key] = value;
+    }
+  }
+  return redacted;
+}
 
 export function createDebugState() {
   return {
@@ -42,7 +59,7 @@ export function debugMiddleware(state: DebugState): RequestHandler {
         id,
         method: req.method,
         path: req.path,
-        body: req.method !== 'GET' ? req.body : undefined,
+        body: req.method !== 'GET' ? redactBody(req.body) : undefined,
         timestamp: startTime,
         durationMs: Date.now() - startTime,
         statusCode: res.statusCode,
