@@ -20,16 +20,19 @@ const API_KEYS = (process.env.HUASCAR_API_KEYS || '')
   .map((k) => k.trim())
   .filter((k) => k.length > 0);
 
-/** Timing-safe token comparison to prevent timing attacks */
+/** Timing-safe token comparison — constant-time regardless of key lengths.
+ * Uses HMAC-SHA256 to normalize to fixed-length digests before comparison,
+ * preventing key length oracle attacks via timing differences. */
 function isValidToken(provided: string): boolean {
+  const providedHash = crypto.createHmac('sha256', 'huascar-auth').update(provided).digest();
+  let valid = false;
   for (const key of API_KEYS) {
-    if (provided.length === key.length) {
-      if (crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(key))) {
-        return true;
-      }
+    const keyHash = crypto.createHmac('sha256', 'huascar-auth').update(key).digest();
+    if (crypto.timingSafeEqual(providedHash, keyHash)) {
+      valid = true;
     }
   }
-  return false;
+  return valid;
 }
 
 function extractToken(req: Request): string | null {
