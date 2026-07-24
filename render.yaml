@@ -7,9 +7,17 @@ services:
     envVars:
       - key: PORT
         value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: HUASCAR_API_KEYS
+        generateValue: true
       - key: LLM_MOCK_MODE
         value: "true"
       - key: HUASCAR_DB_PATH
         value: /data/huascar.db
       - key: BYPASS_SECRET
+        generateValue: true
+      - key: METRICS_SECRET
         generateValue: true
