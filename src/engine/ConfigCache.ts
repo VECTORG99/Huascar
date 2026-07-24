@@ -6,6 +6,8 @@ import { logger } from '../logger.js';
  * Singleton cache for agent config files (steering.json, rag.json).
  * Reads once at first access and caches in memory. Avoids readFileSync per request.
  * Call invalidate() to force reload (e.g., after external config change).
+ *
+ * If stat() fails, returns the cached version instead of reloading (#280).
  */
 export class ConfigCache {
   private static instance: ConfigCache | null = null;
@@ -32,7 +34,8 @@ export class ConfigCache {
     }
     if (this.steeringCache) {
       const mtime = this.getMtime(config.paths.steering);
-      if (mtime === this.steeringMtime) return this.steeringCache;
+      // If stat fails (mtime === 0), use cached version instead of reloading (#280)
+      if (mtime === 0 || mtime === this.steeringMtime) return this.steeringCache;
     }
     const raw = fs.readFileSync(config.paths.steering, config.rag.encoding);
     this.steeringCache = JSON.parse(raw);
@@ -58,7 +61,8 @@ export class ConfigCache {
 
     if (this.ragCache) {
       const mtime = this.getMtime(config.paths.rag);
-      if (mtime === this.ragMtime) return this.ragCache;
+      // If stat fails (mtime === 0), use cached version instead of reloading (#280)
+      if (mtime === 0 || mtime === this.ragMtime) return this.ragCache;
     }
     const raw = fs.readFileSync(config.paths.rag, config.rag.encoding);
     this.ragCache = JSON.parse(raw);

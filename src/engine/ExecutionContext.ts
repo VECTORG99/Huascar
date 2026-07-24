@@ -4,8 +4,8 @@
  * Features:
  * - Sessions group executions with shared context
  * - Context injection: summarizes previous executions into system prompt
- * - Failure learning: past errors injected as warnings
- * - Key-value memory store per role
+ * - Failure learning: past errors injected as warnings (persisted to DB)
+ * - Key-value memory store per role (persisted via agent_memory table)
  */
 import { logger } from '../logger.js';
 import type { Store } from './Store.js';
@@ -40,7 +40,60 @@ export class ExecutionContext {
   private static readonly MAX_ROLES = 50;
   private static readonly MAX_FAILURES_PER_ROLE = 20;
 
-  constructor(private readonly store: Store | null) {}
+  constructor(private readonly store: Store | null) {
+    this.loadFromDb();
+  }
+
+  /**
+   * Load persisted memory and failures from DB on startup (#245).
+   */
+  private loadFromDb(): void {
+    if (!this.store) return;
+    try {
+      const db = this.store.getDatabase();
+      // Load memory entries
+      const memoryRows = db.prepare('SELECT role, key, value, created_at, updated_at FROM agent_memory').all() as {
+        role: string;
+        key: string;
+        value: string;
+        created_at: number;
+        updated_at: number;
+      }[];
+      for (const row of memoryRows) {
+        if (!this.memory.has(row.role)) this.memory.set(row.role, new Map());
+        this.memory.get(row.role)!.set(row.key, {
+          key: row.key,
+          value: row.value,
+          role: row.role,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        });
+      }
+      // Load failures
+      const failureRows = db
+        .prepare('SELECT role, tool, args, error_type, timestamp FROM execution_failures ORDER BY timestamp DESC')
+        .all() as {
+        role: string;
+        tool: string;
+        args: string;
+        error_type: string;
+        timestamp: number;
+      }[];
+      for (const row of failureRows) {
+        if (!this.failures.has(row.role)) this.failures.set(row.role, []);
+        const records = this.failures.get(row.role)!;
+        if (records.length < ExecutionContext.MAX_FAILURES_PER_ROLE) {
+          records.push({ tool: row.tool, args: row.args, error_type: row.error_type, timestamp: row.timestamp });
+        }
+      }
+      logger.info(
+        { memoryRoles: this.memory.size, failureRoles: this.failures.size },
+        '[ExecutionContext] Loaded from DB',
+      );
+    } catch (err) {
+      logger.warn({ err }, '[ExecutionContext] Failed to load from DB, starting fresh');
+    }
+  }
 
   /**
    * Get recent execution summaries for a session/role to inject as context.
@@ -102,14 +155,25 @@ export class ExecutionContext {
 
   /**
    * Record a tool failure for future context injection.
+   * Persisted to DB (#245).
    */
   recordFailure(role: string, tool: string, args: string, errorType: string): void {
     if (!this.failures.has(role)) this.failures.set(role, []);
     const records = this.failures.get(role)!;
-    records.push({ tool, args, error_type: errorType, timestamp: Date.now() });
+    const timestamp = Date.now();
+    records.push({ tool, args, error_type: errorType, timestamp });
     // Keep last N failures per role
     if (records.length > ExecutionContext.MAX_FAILURES_PER_ROLE)
       records.splice(0, records.length - ExecutionContext.MAX_FAILURES_PER_ROLE);
+
+    // Persist to DB
+    if (this.store) {
+      try {
+        this.store.saveFailure(role, tool, args, errorType, timestamp);
+      } catch (err) {
+        logger.warn({ err }, '[ExecutionContext] Failed to persist failure');
+      }
+    }
     logger.debug({ role, tool, errorType }, '[ExecutionContext] Failure recorded');
   }
 
@@ -119,6 +183,7 @@ export class ExecutionContext {
 
   /**
    * Store a key-value memory entry for a role.
+   * Persisted to DB via agent_memory table (#245).
    */
   setMemory(role: string, key: string, value: string): void {
     if (!this.memory.has(role)) {
@@ -161,6 +226,18 @@ export class ExecutionContext {
       }
       if (oldestKey) roleMemory.delete(oldestKey);
     }
+
+    // Persist to DB
+    if (this.store) {
+      try {
+        const db = this.store.getDatabase();
+        db.prepare(
+          `INSERT OR REPLACE INTO agent_memory (role, key, value, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+        ).run(role, key, value, existing?.created_at ?? now, now);
+      } catch (err) {
+        logger.warn({ err }, '[ExecutionContext] Failed to persist memory');
+      }
+    }
   }
 
   getMemoryValue(role: string, key: string): string | undefined {
@@ -174,10 +251,27 @@ export class ExecutionContext {
   }
 
   deleteMemory(role: string, key: string): boolean {
-    return this.memory.get(role)?.delete(key) ?? false;
+    const deleted = this.memory.get(role)?.delete(key) ?? false;
+    if (deleted && this.store) {
+      try {
+        const db = this.store.getDatabase();
+        db.prepare('DELETE FROM agent_memory WHERE role = ? AND key = ?').run(role, key);
+      } catch (err) {
+        logger.warn({ err }, '[ExecutionContext] Failed to delete memory from DB');
+      }
+    }
+    return deleted;
   }
 
   clearMemory(role: string): void {
     this.memory.delete(role);
+    if (this.store) {
+      try {
+        const db = this.store.getDatabase();
+        db.prepare('DELETE FROM agent_memory WHERE role = ?').run(role);
+      } catch (err) {
+        logger.warn({ err }, '[ExecutionContext] Failed to clear memory in DB');
+      }
+    }
   }
 }

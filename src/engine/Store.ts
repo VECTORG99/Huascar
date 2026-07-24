@@ -7,6 +7,9 @@ import { ErrorCodes, StoreError } from '../errors.js';
 import { MigrationRunner } from './Migrations.js';
 import { initialMigrations } from './migrations/index.js';
 
+/** Maximum size for session message content (100KB) */
+const MAX_MESSAGE_SIZE = 102_400;
+
 export interface ExecutionRecord {
   id: number;
   role: string;
@@ -62,6 +65,14 @@ export interface AgentRecord {
   updated_at: number;
   last_executed_at: number | null;
   execution_count: number;
+}
+
+/**
+ * Factory function for creating Store instances.
+ * Supports dependency injection and testing.
+ */
+export function createStore(dbPath?: string): Store {
+  return new Store(dbPath);
 }
 
 export class Store {
@@ -179,12 +190,16 @@ export class Store {
 
   // --- Agent sessions ---
 
+  /**
+   * Create a session, using INSERT OR IGNORE to prevent race-condition duplicates (#271).
+   */
   createSession(id: string, role: string, now = Date.now(), metadata?: string | null): SessionRecord {
     this.assertOpen();
     this.db
-      .prepare('INSERT INTO sessions (id, role, created_at, last_active_at, metadata) VALUES (?, ?, ?, ?, ?)')
+      .prepare('INSERT OR IGNORE INTO sessions (id, role, created_at, last_active_at, metadata) VALUES (?, ?, ?, ?, ?)')
       .run(id, role, now, now, metadata ?? null);
-    return { id, role, created_at: now, last_active_at: now, metadata: metadata ?? null };
+    // Return the session (could be existing if INSERT OR IGNORE hit a duplicate)
+    return this.getSession(id)!;
   }
 
   getSession(id: string): SessionRecord | null {
@@ -197,11 +212,16 @@ export class Store {
     this.db.prepare('UPDATE sessions SET last_active_at = ? WHERE id = ?').run(now, id);
   }
 
+  /**
+   * Add a message to a session. Truncates content to MAX_MESSAGE_SIZE (#282).
+   */
   addSessionMessage(sessionId: string, role: string, content: string, now = Date.now()): void {
     this.assertOpen();
+    const truncated =
+      content.length > MAX_MESSAGE_SIZE ? content.slice(0, MAX_MESSAGE_SIZE) + '\n... [truncated]' : content;
     this.db
       .prepare('INSERT INTO session_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)')
-      .run(sessionId, role, content, now);
+      .run(sessionId, role, truncated, now);
   }
 
   listSessionMessages(sessionId: string, limit = config.sessions.maxMessages): SessionMessageRecord[] {
@@ -305,7 +325,7 @@ export class Store {
         `
       SELECT content_hash, SUM(CASE WHEN embedding IS NULL THEN 1 ELSE 0 END) as missing_embeddings
       FROM rag_documents
-      WHERE source = ? AND content_hash IS NOT NULL
+      WHERE source = ? AND content_hash IS NOT NULL AND deleted_at IS NULL
       GROUP BY content_hash
       LIMIT 1
     `,
@@ -315,10 +335,44 @@ export class Store {
     return row.content_hash;
   }
 
+  /**
+   * Soft-delete RAG source chunks (#258). Marks as deleted instead of removing.
+   */
+  softDeleteChunksBySource(source: string): number {
+    this.assertOpen();
+    const now = new Date().toISOString();
+    return this.db
+      .prepare('UPDATE rag_documents SET deleted_at = ? WHERE source = ? AND deleted_at IS NULL')
+      .run(now, source).changes;
+  }
+
+  /**
+   * Restore soft-deleted RAG source (#258).
+   */
+  restoreChunksBySource(source: string): number {
+    this.assertOpen();
+    return this.db
+      .prepare('UPDATE rag_documents SET deleted_at = NULL WHERE source = ? AND deleted_at IS NOT NULL')
+      .run(source).changes;
+  }
+
+  /**
+   * Hard-delete: permanently removes chunks (used for old data or after retention).
+   */
   deleteChunksBySource(source: string): void {
     this.assertOpen();
     const stmt = this.db.prepare('DELETE FROM rag_documents WHERE source = ?');
     stmt.run(source);
+  }
+
+  /**
+   * Purge soft-deleted chunks older than retentionDays.
+   */
+  purgeSoftDeletedChunks(retentionDays = 30): number {
+    this.assertOpen();
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    return this.db.prepare('DELETE FROM rag_documents WHERE deleted_at IS NOT NULL AND deleted_at < ?').run(cutoff)
+      .changes;
   }
 
   getRagSources(): RagSourceSummary[] {
@@ -328,6 +382,7 @@ export class Store {
         `
       SELECT source, COUNT(*) as chunk_count, MAX(content_hash) as content_hash, GROUP_CONCAT(chunk_hash) as chunk_hashes
       FROM rag_documents
+      WHERE deleted_at IS NULL
       GROUP BY source
       ORDER BY source
     `,
@@ -341,7 +396,9 @@ export class Store {
 
   getAllChunks(): DocumentChunk[] {
     this.assertOpen();
-    const rows = this.db.prepare('SELECT * FROM rag_documents ORDER BY source, chunk_index').all() as any[];
+    const rows = this.db
+      .prepare('SELECT * FROM rag_documents WHERE deleted_at IS NULL ORDER BY source, chunk_index')
+      .all() as any[];
     return rows.map((r) => ({
       ...r,
       embedding: r.embedding ? (JSON.parse(r.embedding) as number[]) : null,
@@ -353,7 +410,7 @@ export class Store {
     this.assertOpen();
     const rows = this.db
       .prepare(
-        'SELECT chunk_text, embedding FROM rag_documents WHERE embedding IS NOT NULL ORDER BY source, chunk_index',
+        'SELECT chunk_text, embedding FROM rag_documents WHERE embedding IS NOT NULL AND deleted_at IS NULL ORDER BY source, chunk_index',
       )
       .all() as any[];
     return rows.map((r) => ({
@@ -364,8 +421,54 @@ export class Store {
 
   getChunksCount(): number {
     this.assertOpen();
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM rag_documents').get() as { count: number };
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM rag_documents WHERE deleted_at IS NULL').get() as {
+      count: number;
+    };
     return row.count;
+  }
+
+  // --- ExecutionContext persistence (#245) ---
+
+  saveFailure(role: string, tool: string, args: string, errorType: string, timestamp: number): void {
+    this.assertOpen();
+    this.db
+      .prepare('INSERT INTO execution_failures (role, tool, args, error_type, timestamp) VALUES (?, ?, ?, ?, ?)')
+      .run(role, tool, args, errorType, timestamp);
+  }
+
+  getFailures(role: string, limit = 20): { tool: string; args: string; error_type: string; timestamp: number }[] {
+    this.assertOpen();
+    return this.db
+      .prepare(
+        'SELECT tool, args, error_type, timestamp FROM execution_failures WHERE role = ? ORDER BY timestamp DESC LIMIT ?',
+      )
+      .all(role, limit) as any[];
+  }
+
+  saveCommitApproval(id: string, status: string, diffContext: string, createdAt: string): void {
+    this.assertOpen();
+    this.db
+      .prepare('INSERT OR REPLACE INTO commit_approvals (id, status, diff_context, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, status, diffContext, createdAt);
+  }
+
+  updateCommitApprovalStatus(id: string, status: string): boolean {
+    this.assertOpen();
+    return (
+      this.db
+        .prepare("UPDATE commit_approvals SET status = ?, resolved_at = datetime('now') WHERE id = ?")
+        .run(status, id).changes > 0
+    );
+  }
+
+  getCommitApproval(id: string): { id: string; status: string; diff_context: string; created_at: string } | null {
+    this.assertOpen();
+    return (this.db.prepare('SELECT * FROM commit_approvals WHERE id = ?').get(id) as any) ?? null;
+  }
+
+  getPendingCommitApprovals(): { id: string; status: string; diff_context: string; created_at: string }[] {
+    this.assertOpen();
+    return this.db.prepare("SELECT * FROM commit_approvals WHERE status = 'pending'").all() as any[];
   }
 
   isOpen(): boolean {

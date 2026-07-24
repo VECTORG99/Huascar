@@ -3,6 +3,7 @@ import { mcpConnectionPool } from './engine/McpConnectionPool.js';
 import { logger } from './logger.js';
 import { app, store } from './app.js';
 import { clearApprovalTimers } from './services/approvals.js';
+import { waitForInFlight } from './shutdown.js';
 
 if (config.retention.cleanupOnStart) {
   try {
@@ -35,13 +36,15 @@ async function gracefulShutdown(signal: string, exitCode: number): Promise<void>
   const timeout = setTimeout(() => {
     logger.error({ signal }, 'shutdown timeout, forcing exit');
     process.exit(1);
-  }, 10000);
+  }, 45_000); // Hard timeout extended to 45s to allow 30s drain
   timeout.unref();
 
   // Stop accepting new connections
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Brief drain period for in-flight requests
-  await new Promise<void>((resolve) => setTimeout(resolve, 500).unref());
+
+  // Wait for in-flight executions to complete (up to 30s hard timeout) (#285)
+  await waitForInFlight(30_000);
+
   clearApprovalTimers();
   await mcpConnectionPool.closeAll();
   if (store.isOpen()) store.close();
