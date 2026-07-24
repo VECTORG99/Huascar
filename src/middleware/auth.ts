@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { logger } from '../logger.js';
 
 /**
  * Authentication middleware for the Huascar API.
- * 
+ *
  * Supports Bearer token auth via Authorization header or X-API-Key header.
  * API keys are configured via HUASCAR_API_KEYS env var (comma-separated).
- * 
+ *
  * When AUTH_REQUIRED=false (default for development), auth is optional.
  * When AUTH_REQUIRED=true (production), all protected routes require a valid key.
  */
@@ -14,12 +15,22 @@ import { logger } from '../logger.js';
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === 'true';
 
 // Load API keys from environment — comma-separated list
-const API_KEYS = new Set(
-  (process.env.HUASCAR_API_KEYS || '')
-    .split(',')
-    .map(k => k.trim())
-    .filter(k => k.length > 0)
-);
+const API_KEYS = (process.env.HUASCAR_API_KEYS || '')
+  .split(',')
+  .map((k) => k.trim())
+  .filter((k) => k.length > 0);
+
+/** Timing-safe token comparison to prevent timing attacks */
+function isValidToken(provided: string): boolean {
+  for (const key of API_KEYS) {
+    if (provided.length === key.length) {
+      if (crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(key))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 function extractToken(req: Request): string | null {
   // Check Authorization: Bearer <token>
@@ -49,7 +60,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 
   // Fail closed: production auth misconfiguration must not allow protected requests.
-  if (API_KEYS.size === 0) {
+  if (API_KEYS.length === 0) {
     logger.error('AUTH_REQUIRED=true but no HUASCAR_API_KEYS configured');
     res.status(500).json({ error: 'Authentication misconfigured', code: 'AUTH_MISCONFIGURED' });
     return;
@@ -66,7 +77,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  if (!API_KEYS.has(token)) {
+  if (!isValidToken(token)) {
     res.status(403).json({
       error: 'Invalid API key',
       code: 'AUTH_INVALID',

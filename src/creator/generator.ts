@@ -13,7 +13,11 @@ export const GENERATOR_VERSION = '1.0.0';
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, stableValue(child)]));
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, child]) => [key, stableValue(child)]),
+    );
   }
   return value;
 }
@@ -27,7 +31,13 @@ function sha256(content: string): string {
 }
 
 function slugify(value: string): string {
-  const slug = value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+  const slug = value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
   return slug || 'generated-agent';
 }
 
@@ -46,8 +56,17 @@ function listAnswer(answers: CreatorAnswers, id: string): string[] {
 }
 
 function validateArtifactPath(path: string): void {
-  if (!path || path.startsWith('/') || path.includes('\\') || path.split('/').some(segment => segment === '..' || segment === '')) {
-    throw new CreatorInputError('Se intentó generar una ruta de artefacto insegura.', [{ path: 'artifact.path', message: path }], 422);
+  if (
+    !path ||
+    path.startsWith('/') ||
+    path.includes('\\') ||
+    path.split('/').some((segment) => segment === '..' || segment === '')
+  ) {
+    throw new CreatorInputError(
+      'Se intentó generar una ruta de artefacto insegura.',
+      [{ path: 'artifact.path', message: path }],
+      422,
+    );
   }
 }
 
@@ -58,22 +77,42 @@ function assertNoLiteralSecrets(content: string, path: string): void {
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
     /\bAKIA[0-9A-Z]{16}\b/,
   ];
-  if (patterns.some(pattern => pattern.test(content))) {
-    throw new CreatorInputError('El preview contiene un valor con apariencia de secreto.', [{ path, message: 'Reemplaza secretos por referencias de entorno como ${SECRET_NAME}.' }], 422);
+  if (patterns.some((pattern) => pattern.test(content))) {
+    throw new CreatorInputError(
+      'El preview contiene un valor con apariencia de secreto.',
+      [{ path, message: 'Reemplaza secretos por referencias de entorno como ${SECRET_NAME}.' }],
+      422,
+    );
   }
 }
 
-function makeArtifact(path: string, kind: GeneratedArtifact['kind'], mediaType: GeneratedArtifact['mediaType'], description: string, content: string): GeneratedArtifact {
+function makeArtifact(
+  path: string,
+  kind: GeneratedArtifact['kind'],
+  mediaType: GeneratedArtifact['mediaType'],
+  description: string,
+  content: string,
+): GeneratedArtifact {
   validateArtifactPath(path);
   assertNoLiteralSecrets(content, path);
   return { path, kind, mediaType, description, content, sha256: sha256(content) };
 }
 
-function jsonArtifact(path: string, kind: GeneratedArtifact['kind'], description: string, value: unknown): GeneratedArtifact {
+function jsonArtifact(
+  path: string,
+  kind: GeneratedArtifact['kind'],
+  description: string,
+  value: unknown,
+): GeneratedArtifact {
   return makeArtifact(path, kind, 'application/json', description, stableJson(value));
 }
 
-function markdownArtifact(path: string, kind: GeneratedArtifact['kind'], description: string, content: string): GeneratedArtifact {
+function markdownArtifact(
+  path: string,
+  kind: GeneratedArtifact['kind'],
+  description: string,
+  content: string,
+): GeneratedArtifact {
   const normalized = content.trim() + '\n';
   return makeArtifact(path, kind, 'text/markdown', description, normalized);
 }
@@ -81,9 +120,15 @@ function markdownArtifact(path: string, kind: GeneratedArtifact['kind'], descrip
 function buildBlueprint(answers: CreatorAnswers): AgentBlueprint {
   const evaluation = evaluateDecisionTree(answers);
   if (!evaluation.progress.complete || evaluation.issues.length > 0) {
-    const issues = evaluation.issues.length > 0
-      ? evaluation.issues
-      : [{ path: evaluation.nextQuestion ? `answers.${evaluation.nextQuestion.id}` : 'answers', message: 'Completa todas las preguntas requeridas antes de generar.' }];
+    const issues =
+      evaluation.issues.length > 0
+        ? evaluation.issues
+        : [
+            {
+              path: evaluation.nextQuestion ? `answers.${evaluation.nextQuestion.id}` : 'answers',
+              message: 'Completa todas las preguntas requeridas antes de generar.',
+            },
+          ];
     throw new CreatorInputError('El árbol de decisiones está incompleto.', issues, 422);
   }
 
@@ -132,7 +177,10 @@ function buildBlueprint(answers: CreatorAnswers): AgentBlueprint {
       autonomy: stringAnswer(answers, 'autonomy'),
       capabilities,
       targets,
-      requireHumanApproval: boolAnswer(answers, 'human_approval') || production || capabilities.some(value => value === 'deploy' || value === 'operate-production'),
+      requireHumanApproval:
+        boolAnswer(answers, 'human_approval') ||
+        production ||
+        capabilities.some((value) => value === 'deploy' || value === 'operate-production'),
     },
     knowledge: {
       enabled: knowledgeEnabled,
@@ -170,20 +218,32 @@ function buildSystemPrompt(blueprint: AgentBlueprint): string {
     `Entorno: ${blueprint.environments.target}`,
     'Explica evidencia, supuestos, riesgos y cambios propuestos.',
     'No reveles secretos ni inventes acceso a herramientas o datos.',
-    blueprint.agent.requireHumanApproval ? 'Solicita aprobación humana antes de cualquier acción con efectos.' : 'Trabaja en modo asesor y no realices acciones con efectos.',
+    blueprint.agent.requireHumanApproval
+      ? 'Solicita aprobación humana antes de cualquier acción con efectos.'
+      : 'Trabaja en modo asesor y no realices acciones con efectos.',
   ];
-  if (blueprint.environments.target !== 'development') constraints.push('En producción prioriza mínimo privilegio, observabilidad, rollback y disponibilidad.');
+  if (blueprint.environments.target !== 'development')
+    constraints.push('En producción prioriza mínimo privilegio, observabilidad, rollback y disponibilidad.');
   return constraints.join('\n');
 }
 
 function mapRagSources(sourceIds: string[]): unknown[] {
-  return sourceIds.map(source => {
+  return sourceIds.map((source) => {
     if (source === 'repository-docs') return { type: 'local_directory', path: './docs', pattern: '*.md' };
     if (source === 'source-code') return { type: 'local_directory', path: './src', pattern: '*.ts' };
     if (source === 'runbooks') return { type: 'local_directory', path: './runbooks', pattern: '*.md' };
-    if (source === 'web-documentation') return { type: 'inline', content: 'Configura únicamente URLs de documentación aprobadas en el entorno destino.' };
-    if (source === 'tickets') return { type: 'inline', content: 'Conecta el proveedor de tickets mediante un MCP de sólo lectura y credenciales de mínimo privilegio.' };
-    if (source === 'rag-vector-store') return { type: 'inline', content: 'Configura el namespace vectorial del proyecto y su política de retención antes de indexar.' };
+    if (source === 'web-documentation')
+      return { type: 'inline', content: 'Configura únicamente URLs de documentación aprobadas en el entorno destino.' };
+    if (source === 'tickets')
+      return {
+        type: 'inline',
+        content: 'Conecta el proveedor de tickets mediante un MCP de sólo lectura y credenciales de mínimo privilegio.',
+      };
+    if (source === 'rag-vector-store')
+      return {
+        type: 'inline',
+        content: 'Configura el namespace vectorial del proyecto y su política de retención antes de indexar.',
+      };
     return { type: 'inline', content: `Fuente personalizada pendiente de adaptar: ${source}` };
   });
 }
@@ -197,7 +257,8 @@ function buildMcpConfig(blueprint: AgentBlueprint): Record<string, unknown> {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-github'],
       env: { GITHUB_PERSONAL_ACCESS_TOKEN: '${GITHUB_TOKEN}' },
-      description: 'Integración GitHub; usa un token de mínimo privilegio y fija la versión del paquete antes de producción.',
+      description:
+        'Integración GitHub; usa un token de mínimo privilegio y fija la versión del paquete antes de producción.',
     };
   }
   if (blueprint.environments.target !== 'production' && capabilities.includes('read-repository')) {
@@ -219,9 +280,15 @@ function buildMcpConfig(blueprint: AgentBlueprint): Record<string, unknown> {
 
 function buildWhy(blueprint: AgentBlueprint): string {
   const technologies = blueprint.project.technologies.map(describeCatalogSelection).join(', ');
-  const recommendations = blueprint.recommendations.length === 0
-    ? '- No se activaron recomendaciones adicionales.'
-    : blueprint.recommendations.map(item => `- **${item.title}:** ${item.reason}\n  - Beneficios: ${item.benefits.join('; ')}\n  - Trade-offs: ${item.tradeoffs.join('; ')}\n  - Alternativas: ${item.alternatives.join('; ')}`).join('\n');
+  const recommendations =
+    blueprint.recommendations.length === 0
+      ? '- No se activaron recomendaciones adicionales.'
+      : blueprint.recommendations
+          .map(
+            (item) =>
+              `- **${item.title}:** ${item.reason}\n  - Beneficios: ${item.benefits.join('; ')}\n  - Trade-offs: ${item.tradeoffs.join('; ')}\n  - Alternativas: ${item.alternatives.join('; ')}`,
+          )
+          .join('\n');
   return `# Por qué se generó este agente
 
 ## Problema y éxito
@@ -278,19 +345,23 @@ Copia únicamente los archivos del target que utilizarás. Conserva las rutas re
 4. Ejecuta lint, tests y una prueba en modo asesor.
 5. Verifica que herramientas no seleccionadas permanezcan deshabilitadas.
 
-${production ? `## 4. Paso a producción
+${
+  production
+    ? `## 4. Paso a producción
 
 - Despliega primero en staging.
 - Configura logs, métricas, trazas y alertas.
 - Verifica backup, rollback y límites de costo.
 - Ejecuta con identidad separada del usuario administrador.
 - Mantén deploy y operación detrás de aprobación humana.
-` : `## 4. Uso en desarrollo
+`
+    : `## 4. Uso en desarrollo
 
 - Limita filesystem al repositorio destino.
 - Allowlista comandos de build/test.
 - Revisa los parches antes de aplicarlos o hacer commit.
-`}
+`
+}
 `;
 }
 
@@ -393,13 +464,15 @@ function buildApplicationGuide(blueprint: AgentBlueprint): GeneratedAgentBundle[
     'Valida el agente en modo asesor con un repositorio o entorno de prueba.',
     'Activa únicamente las capacidades verificadas y documenta cualquier override.',
   ];
-  const productionChecklist = production ? [
-    'Usar una identidad de workload separada y sin credenciales personales.',
-    'Probar en staging, configurar observabilidad y verificar alertas.',
-    'Definir timeout, rate limit, presupuesto, backup y rollback.',
-    'Exigir aprobación humana para deploy y acciones operacionales.',
-    'Registrar auditoría de entradas, decisiones y herramientas invocadas.',
-  ] : [];
+  const productionChecklist = production
+    ? [
+        'Usar una identidad de workload separada y sin credenciales personales.',
+        'Probar en staging, configurar observabilidad y verificar alertas.',
+        'Definir timeout, rate limit, presupuesto, backup y rollback.',
+        'Exigir aprobación humana para deploy y acciones operacionales.',
+        'Registrar auditoría de entradas, decisiones y herramientas invocadas.',
+      ]
+    : [];
   return {
     summary: `Aplicación guiada de ${blueprint.identity.name} para ${blueprint.environments.target}.`,
     steps,
@@ -413,67 +486,174 @@ export function generateAgentBundle(input: unknown): GeneratedAgentBundle {
   const artifacts: GeneratedArtifact[] = [];
   const paths = new Set<string>();
   const add = (artifact: GeneratedArtifact) => {
-    if (paths.has(artifact.path)) throw new CreatorInputError('Ruta de artefacto duplicada.', [{ path: artifact.path, message: 'Cada archivo debe ser único.' }], 422);
+    if (paths.has(artifact.path))
+      throw new CreatorInputError(
+        'Ruta de artefacto duplicada.',
+        [{ path: artifact.path, message: 'Cada archivo debe ser único.' }],
+        422,
+      );
     paths.add(artifact.path);
     artifacts.push(artifact);
   };
 
-  add(jsonArtifact('huascar.blueprint.json', 'configuration', 'Blueprint canónico con todas las decisiones del agente.', blueprint));
-  add(markdownArtifact('docs/INSTALL.md', 'documentation', 'Tutorial para aplicar el bundle de forma segura.', buildInstall(blueprint)));
-  add(markdownArtifact('docs/WHY.md', 'documentation', 'Explicación de decisiones, recomendaciones y trade-offs.', buildWhy(blueprint)));
+  add(
+    jsonArtifact(
+      'huascar.blueprint.json',
+      'configuration',
+      'Blueprint canónico con todas las decisiones del agente.',
+      blueprint,
+    ),
+  );
+  add(
+    markdownArtifact(
+      'docs/INSTALL.md',
+      'documentation',
+      'Tutorial para aplicar el bundle de forma segura.',
+      buildInstall(blueprint),
+    ),
+  );
+  add(
+    markdownArtifact(
+      'docs/WHY.md',
+      'documentation',
+      'Explicación de decisiones, recomendaciones y trade-offs.',
+      buildWhy(blueprint),
+    ),
+  );
 
-  if (blueprint.features.agentsMd) add(markdownArtifact('AGENTS.md', 'instruction', 'Instrucciones portables para agentes que trabajen en el repositorio.', buildAgentsMd(blueprint)));
-  if (blueprint.features.skills) add(markdownArtifact(`skills/${blueprint.identity.slug}/SKILL.md`, 'instruction', 'Skill portable con el procedimiento principal.', buildSkill(blueprint)));
+  if (blueprint.features.agentsMd)
+    add(
+      markdownArtifact(
+        'AGENTS.md',
+        'instruction',
+        'Instrucciones portables para agentes que trabajen en el repositorio.',
+        buildAgentsMd(blueprint),
+      ),
+    );
+  if (blueprint.features.skills)
+    add(
+      markdownArtifact(
+        `skills/${blueprint.identity.slug}/SKILL.md`,
+        'instruction',
+        'Skill portable con el procedimiento principal.',
+        buildSkill(blueprint),
+      ),
+    );
 
   if (blueprint.agent.targets.includes('huascar')) {
     const roleKey = blueprint.identity.slug.replace(/-/g, '_').toUpperCase();
-    add(jsonArtifact('huascar/steering.json', 'configuration', 'Rol y steering consumible por HuascarEngine.', {
-      roles: {
-        [roleKey]: {
-          name: blueprint.identity.name,
-          system_prompt: buildSystemPrompt(blueprint),
-          temperature: 0.2,
+    add(
+      jsonArtifact('huascar/steering.json', 'configuration', 'Rol y steering consumible por HuascarEngine.', {
+        roles: {
+          [roleKey]: {
+            name: blueprint.identity.name,
+            system_prompt: buildSystemPrompt(blueprint),
+            temperature: 0.2,
+          },
         },
-      },
-    }));
-    add(jsonArtifact('huascar/security-policy.json', 'configuration', 'Política compatible con el hook runtime actual.', {
-      blocked_tool_patterns: ['shell', 'sudo'],
-      blocked_args_substrings: {
-        execute_bash: ['rm -rf', 'git push --force', 'drop table', 'mkfs', 'dd if='],
-      },
-    }));
-    add(jsonArtifact('huascar/governance.json', 'configuration', 'Capacidades y aprobaciones que debe aplicar un adaptador de runtime antes de ejecutar.', {
-      enforcement: 'runtime-adapter-required',
-      autonomy: blueprint.agent.autonomy,
-      require_human_approval: blueprint.agent.requireHumanApproval,
-      allowed_capabilities: blueprint.agent.capabilities,
-      production: blueprint.environments.target !== 'development',
-      notes: 'Este archivo documenta intención. HuascarEngine aún no lo consume automáticamente.',
-    }));
-    add(jsonArtifact('huascar/mcps.json', 'configuration', 'Servidores MCP sugeridos según entorno y capacidades.', buildMcpConfig(blueprint)));
-    if (blueprint.knowledge.enabled) add(jsonArtifact('huascar/rag.json', 'configuration', 'Fuentes RAG declaradas; deben revisarse antes de cargarlas.', { knowledge_bases: mapRagSources(blueprint.knowledge.sources) }));
-    if (blueprint.prReview.enabled) add(jsonArtifact('huascar/pr-review.json', 'configuration', 'Rúbrica y permisos para revisión de pull requests.', buildPrReview(blueprint)));
+      }),
+    );
+    add(
+      jsonArtifact('huascar/security-policy.json', 'configuration', 'Política compatible con el hook runtime actual.', {
+        blocked_tool_patterns: ['shell', 'sudo'],
+        blocked_args_substrings: {
+          execute_bash: ['rm -rf', 'git push --force', 'drop table', 'mkfs', 'dd if='],
+        },
+      }),
+    );
+    add(
+      jsonArtifact(
+        'huascar/governance.json',
+        'configuration',
+        'Capacidades y aprobaciones que debe aplicar un adaptador de runtime antes de ejecutar.',
+        {
+          enforcement: 'runtime-adapter-required',
+          autonomy: blueprint.agent.autonomy,
+          require_human_approval: blueprint.agent.requireHumanApproval,
+          allowed_capabilities: blueprint.agent.capabilities,
+          production: blueprint.environments.target !== 'development',
+          notes: 'Este archivo documenta intención. HuascarEngine aún no lo consume automáticamente.',
+        },
+      ),
+    );
+    add(
+      jsonArtifact(
+        'huascar/mcps.json',
+        'configuration',
+        'Servidores MCP sugeridos según entorno y capacidades.',
+        buildMcpConfig(blueprint),
+      ),
+    );
+    if (blueprint.knowledge.enabled)
+      add(
+        jsonArtifact(
+          'huascar/rag.json',
+          'configuration',
+          'Fuentes RAG declaradas; deben revisarse antes de cargarlas.',
+          { knowledge_bases: mapRagSources(blueprint.knowledge.sources) },
+        ),
+      );
+    if (blueprint.prReview.enabled)
+      add(
+        jsonArtifact(
+          'huascar/pr-review.json',
+          'configuration',
+          'Rúbrica y permisos para revisión de pull requests.',
+          buildPrReview(blueprint),
+        ),
+      );
   }
 
   if (blueprint.features.kiro) {
-    add(markdownArtifact(`.kiro/steering/${blueprint.identity.slug}.md`, 'instruction', 'Steering del proyecto para Kiro.', `# ${blueprint.identity.name}\n\n${buildSystemPrompt(blueprint)}\n`));
-    if (blueprint.features.skills) add(markdownArtifact(`.kiro/skills/${blueprint.identity.slug}/SKILL.md`, 'instruction', 'Skill de Kiro para el procedimiento generado.', buildSkill(blueprint)));
-    if (blueprint.features.hooks) add(jsonArtifact(`.kiro/hooks/${blueprint.identity.slug}-quality.json`, 'configuration', 'Hook Kiro revisable para quality gate.', buildKiroHook(blueprint)));
+    add(
+      markdownArtifact(
+        `.kiro/steering/${blueprint.identity.slug}.md`,
+        'instruction',
+        'Steering del proyecto para Kiro.',
+        `# ${blueprint.identity.name}\n\n${buildSystemPrompt(blueprint)}\n`,
+      ),
+    );
+    if (blueprint.features.skills)
+      add(
+        markdownArtifact(
+          `.kiro/skills/${blueprint.identity.slug}/SKILL.md`,
+          'instruction',
+          'Skill de Kiro para el procedimiento generado.',
+          buildSkill(blueprint),
+        ),
+      );
+    if (blueprint.features.hooks)
+      add(
+        jsonArtifact(
+          `.kiro/hooks/${blueprint.identity.slug}-quality.json`,
+          'configuration',
+          'Hook Kiro revisable para quality gate.',
+          buildKiroHook(blueprint),
+        ),
+      );
   }
 
   const applicationGuide = buildApplicationGuide(blueprint);
   const warnings = [...evaluation.warnings];
-  if (blueprint.agent.targets.includes('huascar')) warnings.push('Fija versiones exactas de los paquetes MCP antes de usar el bundle fuera de una demo.');
-  if (blueprint.environments.target !== 'development') warnings.push('El preview no despliega el agente: producción requiere staging, identidad separada, observabilidad y rollback verificados.');
+  if (blueprint.agent.targets.includes('huascar'))
+    warnings.push('Fija versiones exactas de los paquetes MCP antes de usar el bundle fuera de una demo.');
+  if (blueprint.environments.target !== 'development')
+    warnings.push(
+      'El preview no despliega el agente: producción requiere staging, identidad separada, observabilidad y rollback verificados.',
+    );
   if (artifacts.length > 40 || artifacts.reduce((sum, artifact) => sum + artifact.content.length, 0) > 256_000) {
-    throw new CreatorInputError('El bundle supera los límites seguros de preview.', [{ path: 'artifacts', message: 'Máximo 40 archivos y 256 KB de contenido.' }], 422);
+    throw new CreatorInputError(
+      'El bundle supera los límites seguros de preview.',
+      [{ path: 'artifacts', message: 'Máximo 40 archivos y 256 KB de contenido.' }],
+      422,
+    );
   }
 
   const manifest = {
     agent: blueprint.identity.slug,
-    artifactCount: artifacts.length + 1,
+    artifactCount: artifacts.length,
     targets: blueprint.agent.targets,
-    files: artifacts.map(artifact => ({ path: artifact.path, sha256: artifact.sha256, kind: artifact.kind })),
+    files: artifacts.map((artifact) => ({ path: artifact.path, sha256: artifact.sha256, kind: artifact.kind })),
   };
   add(jsonArtifact('manifest.json', 'manifest', 'Índice verificable de los archivos generados.', manifest));
 

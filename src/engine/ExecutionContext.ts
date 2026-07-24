@@ -36,6 +36,9 @@ export interface ExecutionSummary {
 export class ExecutionContext {
   private memory = new Map<string, Map<string, MemoryEntry>>();
   private failures = new Map<string, FailureRecord[]>();
+  private static readonly MAX_ENTRIES_PER_ROLE = 100;
+  private static readonly MAX_ROLES = 50;
+  private static readonly MAX_FAILURES_PER_ROLE = 20;
 
   constructor(private readonly store: Store | null) {}
 
@@ -104,8 +107,9 @@ export class ExecutionContext {
     if (!this.failures.has(role)) this.failures.set(role, []);
     const records = this.failures.get(role)!;
     records.push({ tool, args, error_type: errorType, timestamp: Date.now() });
-    // Keep last 20 failures per role
-    if (records.length > 20) records.splice(0, records.length - 20);
+    // Keep last N failures per role
+    if (records.length > ExecutionContext.MAX_FAILURES_PER_ROLE)
+      records.splice(0, records.length - ExecutionContext.MAX_FAILURES_PER_ROLE);
     logger.debug({ role, tool, errorType }, '[ExecutionContext] Failure recorded');
   }
 
@@ -117,7 +121,24 @@ export class ExecutionContext {
    * Store a key-value memory entry for a role.
    */
   setMemory(role: string, key: string, value: string): void {
-    if (!this.memory.has(role)) this.memory.set(role, new Map());
+    if (!this.memory.has(role)) {
+      // Evict oldest role if at capacity
+      if (this.memory.size >= ExecutionContext.MAX_ROLES) {
+        let oldestRole: string | undefined;
+        let oldestTime = Infinity;
+        for (const [r, entries] of this.memory) {
+          for (const entry of entries.values()) {
+            if (entry.updated_at < oldestTime) {
+              oldestTime = entry.updated_at;
+              oldestRole = r;
+            }
+            break; // only check first entry per role for speed
+          }
+        }
+        if (oldestRole) this.memory.delete(oldestRole);
+      }
+      this.memory.set(role, new Map());
+    }
     const roleMemory = this.memory.get(role)!;
     const now = Date.now();
     const existing = roleMemory.get(key);
@@ -128,6 +149,18 @@ export class ExecutionContext {
       created_at: existing?.created_at ?? now,
       updated_at: now,
     });
+    // Evict oldest entries if over limit
+    if (roleMemory.size > ExecutionContext.MAX_ENTRIES_PER_ROLE) {
+      let oldestKey: string | undefined;
+      let oldestTime = Infinity;
+      for (const [k, entry] of roleMemory) {
+        if (entry.updated_at < oldestTime) {
+          oldestTime = entry.updated_at;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) roleMemory.delete(oldestKey);
+    }
   }
 
   getMemoryValue(role: string, key: string): string | undefined {
