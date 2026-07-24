@@ -1,0 +1,29 @@
+# docker-compose.production.yml — production override
+# Uses explicit environment variables instead of env_file to avoid leaking
+# all secrets to all containers. Only pass what each service needs.
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+
+services:
+  backend:
+    env_file: []
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - AUTH_REQUIRED=true
+      - HUASCAR_API_KEYS=${HUASCAR_API_KEYS}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HUASCAR_DB_PATH=/app/data/huascar.db
+      - LLM_MOCK_MODE=false
+      - BYPASS_SECRET=${BYPASS_SECRET}
+      - METRICS_SECRET=${METRICS_SECRET}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      - LOG_LEVEL=info
+
+  frontend:
+    environment:
+      - NODE_ENV=production
+
+  agent-creator:
+    environment:
+      - NODE_ENV=production
