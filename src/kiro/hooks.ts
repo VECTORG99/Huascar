@@ -31,7 +31,14 @@ function loadPolicy(): SecurityPolicy {
     return raw as SecurityPolicy;
   } catch (err) {
     logger.error({ err, policyPath }, '[SECURITY] Error loading security policy');
-    return { version: '0.0.0', mode: 'allowlist', allowed_tools: [], allowed_commands: { entries: [] }, blocked_tool_patterns: [''], blocked_args_substrings: {} };
+    return {
+      version: '0.0.0',
+      mode: 'allowlist',
+      allowed_tools: [],
+      allowed_commands: { entries: [] },
+      blocked_tool_patterns: [''],
+      blocked_args_substrings: {},
+    };
   }
 }
 
@@ -64,7 +71,9 @@ export function activateAdminBypass(secret: string, requestId: string): boolean 
   const existing = activeBypassRequests.get(requestId);
   if (existing) clearTimeout(existing);
 
-  const timer = setTimeout(() => { activeBypassRequests.delete(requestId); }, BYPASS_TTL_MS);
+  const timer = setTimeout(() => {
+    activeBypassRequests.delete(requestId);
+  }, BYPASS_TTL_MS);
   activeBypassRequests.set(requestId, timer);
   logger.warn({ requestId, ttlMs: BYPASS_TTL_MS }, '[SECURITY AUDIT] Admin bypass ACTIVATED');
   return true;
@@ -98,10 +107,14 @@ const SHELL_METACHAR_PATTERN = /[\$`\(\)<>\n\r\x00\\]/;
 
 function parseCommand(cmd: string): { binary: string; fullCmd: string }[] {
   // Split on pipe, semicolon, ampersand (command chaining)
-  return cmd.split(/\s*[|;&]\s*/).map(s => s.trim()).filter(Boolean).map(seg => {
-    const parts = seg.split(/\s+/);
-    return { binary: parts[0] ?? '', fullCmd: seg };
-  });
+  return cmd
+    .split(/\s*[|;&]\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((seg) => {
+      const parts = seg.split(/\s+/);
+      return { binary: parts[0] ?? '', fullCmd: seg };
+    });
 }
 
 export function validateCommand(command: string): { allowed: boolean; reason?: string } {
@@ -114,18 +127,19 @@ export function validateCommand(command: string): { allowed: boolean; reason?: s
   }
 
   for (const { binary, fullCmd } of segments) {
-    const entry = policy.allowed_commands.entries.find(e => e.binary === binary);
+    const entry = policy.allowed_commands.entries.find((e) => e.binary === binary);
     if (!entry) return { allowed: false, reason: `Binary "${binary}" not in allowlist` };
     if (entry.allowed_args.length > 0) {
       const argsStr = fullCmd.slice(binary.length).trim();
       if (argsStr.length > 0) {
         // Exact match: args must exactly match one of the allowed patterns,
         // OR match as a complete prefix followed by a space (word boundary)
-        const isAllowed = entry.allowed_args.some(p =>
-          argsStr === p || argsStr.startsWith(p + ' ')
-        );
+        const isAllowed = entry.allowed_args.some((p) => argsStr === p || argsStr.startsWith(p + ' '));
         if (!isAllowed) {
-          return { allowed: false, reason: `Arguments "${argsStr}" not allowed for "${binary}". Permitted: ${entry.allowed_args.join(', ')}` };
+          return {
+            allowed: false,
+            reason: `Arguments "${argsStr}" not allowed for "${binary}". Permitted: ${entry.allowed_args.join(', ')}`,
+          };
         }
       }
     }
@@ -143,7 +157,10 @@ function denylistCheck(toolName: string, args: Record<string, unknown>): { block
     }
   }
   const serialized = JSON.stringify(args).toLowerCase();
-  const allBlocked = [...(policy.blocked_args_substrings['*'] || []), ...(policy.blocked_args_substrings[toolName] || [])];
+  const allBlocked = [
+    ...(policy.blocked_args_substrings['*'] || []),
+    ...(policy.blocked_args_substrings[toolName] || []),
+  ];
   for (const substr of allBlocked) {
     if (serialized.includes(substr.toLowerCase())) {
       return { blocked: true, reason: `Arguments contain blocked pattern: "${substr}"` };
@@ -187,7 +204,9 @@ export const agentHooks = {
           const result = validateCommand(command);
           if (!result.allowed) {
             logger.error(`[HOOK BLOCKED] Command rejected: ${result.reason}`);
-            throw new Error(`HOOK TRIGGERED: Command blocked — ${result.reason}. Only allowlisted operations are permitted.`);
+            throw new Error(
+              `HOOK TRIGGERED: Command blocked — ${result.reason}. Only allowlisted operations are permitted.`,
+            );
           }
           logger.info(`[HOOK OK] Command validated: ${command.slice(0, 80)}`);
           return true;
@@ -208,9 +227,11 @@ export const agentHooks = {
       for (let i = 0; i < 30; i++) {
         const record = pendingApprovals.get(id);
         if (record && record.status !== 'pending') return record.status === 'approved' ? 'APPROVED' : 'REJECTED';
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1000));
       }
       return 'TIMEOUT';
-    } finally { pendingApprovals.delete(id); }
-  }
+    } finally {
+      pendingApprovals.delete(id);
+    }
+  },
 };

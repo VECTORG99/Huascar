@@ -263,9 +263,11 @@ export class HuascarEngine {
           // local_file, local_directory, and web_url are restricted to server-side config
           // (rag.json) or registered agent configs to prevent path traversal and SSRF.
           if (agentConfig.knowledge && agentConfig.knowledge.length > 0) {
-            const safeSources = agentConfig.knowledge.filter(source => {
+            const safeSources = agentConfig.knowledge.filter((source) => {
               if (source.type === 'inline') return true;
-              logger.warn(`[HuascarEngine] Blocked client-supplied RAG source type="${source.type}" — only inline allowed`);
+              logger.warn(
+                `[HuascarEngine] Blocked client-supplied RAG source type="${source.type}" — only inline allowed`,
+              );
               return false;
             });
             if (safeSources.length > 0) {

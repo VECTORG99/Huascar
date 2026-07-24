@@ -12,13 +12,26 @@ import { logger } from '../logger.js';
  * When AUTH_REQUIRED=true (production), all protected routes require a valid key.
  */
 
-const AUTH_REQUIRED = process.env.AUTH_REQUIRED === 'true';
+const AUTH_REQUIRED = process.env.AUTH_REQUIRED !== 'false';
 
 // Load API keys from environment — comma-separated list
 const API_KEYS = (process.env.HUASCAR_API_KEYS || '')
   .split(',')
   .map((k) => k.trim())
   .filter((k) => k.length > 0);
+
+// Startup warning: if auth is required but no keys configured, log clearly
+if (AUTH_REQUIRED && API_KEYS.length === 0) {
+  const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+  if (isProduction) {
+    logger.fatal('AUTH_REQUIRED=true but no HUASCAR_API_KEYS configured — cannot start in production without API keys');
+    process.exit(1);
+  } else {
+    logger.warn(
+      'AUTH_REQUIRED is enabled but no HUASCAR_API_KEYS configured — set AUTH_REQUIRED=false for local development or configure keys',
+    );
+  }
+}
 
 /** Timing-safe token comparison — constant-time regardless of key lengths.
  * Uses HMAC-SHA256 to normalize to fixed-length digests before comparison,

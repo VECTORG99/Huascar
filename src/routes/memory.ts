@@ -27,11 +27,7 @@ function getValidRoles(): Set<string> {
 function validateRole(role: string): void {
   const validRoles = getValidRoles();
   if (!validRoles.has(role)) {
-    throw new ApiError(
-      ErrorCodes.API_VALIDATION_ERROR,
-      `Role "${role}" does not exist in steering configuration`,
-      404,
-    );
+    throw new ApiError(ErrorCodes.API_VALIDATION_ERROR, `Role "${role}" does not exist in steering configuration`, 404);
   }
 }
 

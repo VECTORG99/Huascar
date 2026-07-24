@@ -20,7 +20,17 @@ export interface DebugRequest {
 const MAX_DEBUG_REQUESTS = 50;
 const MAX_DEBUG_BODY_SIZE = 1024;
 const DEBUG_TTL_MS = 10 * 60 * 1000; // 10 minutes auto-purge
-const SENSITIVE_KEYS = new Set(['password', 'secret', 'token', 'api_key', 'apikey', 'authorization', 'credentials', 'bypass_secret', 'system_prompt']);
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'secret',
+  'token',
+  'api_key',
+  'apikey',
+  'authorization',
+  'credentials',
+  'bypass_secret',
+  'system_prompt',
+]);
 
 /** Case-insensitive production check */
 function isProduction(): boolean {
@@ -80,7 +90,7 @@ export function debugMiddleware(state: DebugState): RequestHandler {
 
       // TTL auto-purge: remove entries older than DEBUG_TTL_MS
       const cutoff = Date.now() - DEBUG_TTL_MS;
-      state.requests = state.requests.filter(r => r.timestamp > cutoff);
+      state.requests = state.requests.filter((r) => r.timestamp > cutoff);
     });
 
     next();
