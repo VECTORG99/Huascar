@@ -47,8 +47,7 @@ export class McpConnectionPool {
     if (this.loading) return this.loading;
     this.loading = this.loadConnections();
     try {
-      const result = await this.loading;
-      return result;
+      return await this.loading;
     } finally {
       this.loading = null;
     }
@@ -136,11 +135,6 @@ export class McpConnectionPool {
     }
     this.mcpConfig = JSON.parse(fs.readFileSync(config.paths.mcps, config.rag.encoding));
     return this.mcpConfig;
-  }
-
-  /** Invalidate cached config — next getConnections() will reload from disk */
-  invalidateConfig(): void {
-    this.mcpConfig = null;
   }
 }
 

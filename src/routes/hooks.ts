@@ -3,7 +3,6 @@ import { Router } from 'express';
 import { resolveApproval } from '../kiro/hooks.js';
 import { ApiError, ErrorCodes } from '../errors.js';
 import type { CommitApproval } from '../services/approvals.js';
-import { approvalTimers } from '../services/approvals.js';
 
 export function hooksRouter(commitApprovals: Map<string, CommitApproval>): Router {
   const router = Router();
@@ -14,17 +13,8 @@ export function hooksRouter(commitApprovals: Map<string, CommitApproval>): Route
         return next(new ApiError(ErrorCodes.API_VALIDATION_ERROR, 'diffContext debe ser un texto', 400));
       }
       const id = crypto.randomUUID();
-      commitApprovals.set(id, {
-        status: 'pending',
-        diffContext: diffContext || '',
-        createdAt: new Date().toISOString(),
-      });
-      const timer = setTimeout(() => {
-        commitApprovals.delete(id);
-        approvalTimers.delete(id);
-      }, 60000);
-      timer.unref(); // Don't block shutdown
-      approvalTimers.set(id, timer);
+      commitApprovals.set(id, { status: 'pending', diffContext: diffContext || '', createdAt: new Date().toISOString() });
+      setTimeout(() => commitApprovals.delete(id), 60000);
       res.json({ id, status: 'pending' });
     } catch (error: unknown) {
       next(error);

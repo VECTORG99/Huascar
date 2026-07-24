@@ -6,33 +6,15 @@ export type MetricsState = {
   startTime: number;
   metrics: {
     totalRequests: number;
-    requestsByPath: Map<string, number>;
-    errorsByPath: Map<string, number>;
+    requestsByPath: Record<string, number>;
+    errorsByPath: Record<string, number>;
   };
 };
-
-const MAX_TRACKED_PATHS = 200;
-
-function incrementBounded(map: Map<string, number>, key: string): void {
-  map.set(key, (map.get(key) || 0) + 1);
-  if (map.size > MAX_TRACKED_PATHS) {
-    // Evict the least-used entry
-    let minKey: string | undefined;
-    let minVal = Infinity;
-    for (const [k, v] of map) {
-      if (v < minVal) {
-        minVal = v;
-        minKey = k;
-      }
-    }
-    if (minKey) map.delete(minKey);
-  }
-}
 
 export function createMetricsState(): MetricsState {
   return {
     startTime: Date.now(),
-    metrics: { totalRequests: 0, requestsByPath: new Map(), errorsByPath: new Map() },
+    metrics: { totalRequests: 0, requestsByPath: {}, errorsByPath: {} },
   };
 }
 
@@ -41,15 +23,12 @@ export function metricsMiddleware(state: MetricsState): RequestHandler {
     const reqId = crypto.randomUUID().slice(0, 8);
     const t0 = Date.now();
     state.metrics.totalRequests++;
-    incrementBounded(state.metrics.requestsByPath, req.path);
+    state.metrics.requestsByPath[req.path] = (state.metrics.requestsByPath[req.path] || 0) + 1;
 
     res.on('finish', () => {
       const duration = Date.now() - t0;
-      requestLogger(reqId).info(
-        { method: req.method, path: req.path, status: res.statusCode, duration, len: res.get('content-length') || 0 },
-        'request completed',
-      );
-      if (res.statusCode >= 400) incrementBounded(state.metrics.errorsByPath, req.path);
+      requestLogger(reqId).info({ method: req.method, path: req.path, status: res.statusCode, duration, len: res.get('content-length') || 0 }, 'request completed');
+      if (res.statusCode >= 400) state.metrics.errorsByPath[req.path] = (state.metrics.errorsByPath[req.path] || 0) + 1;
     });
     next();
   };
@@ -74,8 +53,8 @@ export function metricsRouter(state: MetricsState): Router {
     const safeMetrics = {
       uptime,
       totalRequests: state.metrics.totalRequests,
-      totalErrors: [...state.metrics.errorsByPath.values()].reduce((a, b) => a + b, 0),
-      topPaths: [...state.metrics.requestsByPath.entries()]
+      totalErrors: Object.values(state.metrics.errorsByPath).reduce((a, b) => a + b, 0),
+      topPaths: Object.entries(state.metrics.requestsByPath)
         .sort(([, a], [, b]) => b - a)
         .slice(0, 10)
         .map(([path, count]) => ({ path, count })),

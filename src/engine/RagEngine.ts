@@ -1,17 +1,68 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { URL } from 'url';
 import { config } from '../config.js';
 import { Store } from './Store.js';
 import { VectorIndex } from './VectorIndex.js';
 import { logger } from '../logger.js';
 import { ErrorCodes, RagError } from '../errors.js';
-import { isBlockedUrl } from '../security/urlValidation.js';
 
-// SSRF prevention uses shared utility: isBlockedUrl, isPrivateIp
+// SSRF prevention: block private/reserved IPs and dangerous hosts
+const BLOCKED_HOSTS = [
+  'localhost', '127.0.0.1', '::1', '0.0.0.0',
+  '::ffff:127.0.0.1', '::ffff:0.0.0.0',
+  '169.254.169.254', 'metadata.google.internal',
+  '::ffff:a9fe:a9fe',
+  'metadata.internal', 'kubernetes.default.svc',
+];
+
+/**
+ * Check if an IP address is in a private/reserved range.
+ * Covers: loopback, private (RFC1918), link-local, multicast, cloud metadata.
+ */
+function isPrivateIp(ip: string): boolean {
+  // IPv4 checks
+  const parts = ip.split('.').map(Number);
+  if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255)) {
+    const [p0 = -1, p1 = -1] = parts;
+    if (p0 === 127) return true;                          // 127.0.0.0/8 loopback
+    if (p0 === 10) return true;                           // 10.0.0.0/8 private
+    if (p0 === 172 && p1 >= 16 && p1 <= 31) return true; // 172.16.0.0/12
+    if (p0 === 192 && p1 === 168) return true;     // 192.168.0.0/16
+    if (p0 === 169 && p1 === 254) return true;     // 169.254.0.0/16 link-local
+    if (p0 === 0) return true;                            // 0.0.0.0/8
+    if (p0 >= 224) return true;                           // 224.0.0.0+ multicast/reserved
+  }
+  // IPv6 checks
+  if (ip === '::1' || ip === '::' || ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd')) {
+    return true;
+  }
+  // IPv4-mapped IPv6
+  if (ip.startsWith('::ffff:')) {
+    const mapped = ip.slice(7);
+    return isPrivateIp(mapped);
+  }
+  return false;
+}
 
 /** Maximum bytes to download from a remote URL */
 const MAX_DOWNLOAD_BYTES = 512 * 1024; // 512KB
+
+function isBlockedUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+    if (BLOCKED_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h))) return true;
+    if (isPrivateIp(parsed.hostname)) return true;
+    // Block numeric IPs that could be private (octal, hex, decimal encodings)
+    if (/^\d+$/.test(parsed.hostname)) return true; // decimal-encoded IP
+    if (/^0x/i.test(parsed.hostname)) return true;  // hex-encoded IP
+    return false;
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Stream-read a response body with a hard byte limit.
@@ -45,7 +96,7 @@ function sha256(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export type RagSource =
   | { type: 'local_file'; path: string }
@@ -57,51 +108,30 @@ const RAG_ROOT = path.resolve(process.env.RAG_ROOT || '.');
 
 // Allowed file extensions for RAG ingestion
 const RAG_ALLOWED_EXTENSIONS = new Set([
-  '.md',
-  '.txt',
-  '.json',
-  '.yaml',
-  '.yml',
-  '.toml',
-  '.ts',
-  '.js',
-  '.mjs',
-  '.cjs',
-  '.tsx',
-  '.jsx',
-  '.py',
-  '.go',
-  '.rs',
-  '.java',
-  '.rb',
-  '.sh',
-  '.css',
-  '.html',
-  '.xml',
-  '.csv',
-  '.sql',
-  '.dockerfile',
-  '.tf',
-  '.hcl',
+  '.md', '.txt', '.json', '.yaml', '.yml', '.toml',
+  '.ts', '.js', '.mjs', '.cjs', '.tsx', '.jsx',
+  '.py', '.go', '.rs', '.java', '.rb', '.sh',
+  '.css', '.html', '.xml', '.csv', '.sql',
+  '.dockerfile', '.tf', '.hcl',
 ]);
 
 // Blocked file patterns — sensitive files that should NEVER be ingested
 const RAG_BLOCKED_PATTERNS = [
-  /\.env(\.|$)/i, // .env, .env.local, .env.production
-  /\.pem$/i, // Private keys
-  /\.key$/i, // Private keys
-  /\.p12$/i, // PKCS12 certs
-  /\.pfx$/i, // PFX certs
-  /id_rsa/i, // SSH keys
-  /\.db$/i, // Database files
-  /\.sqlite$/i, // SQLite databases
-  /credentials/i, // Credential files
-  /secrets?\./i, // Secret files
-  /\.npmrc$/i, // npm config (may have tokens)
-  /\.netrc$/i, // Network credentials
-  /\.git\//, // Git internals
-  /node_modules\//, // Dependencies
-  /package-lock\.json$/i, // Lock files (noise, no value)
+  /\.env(\.|$)/i,          // .env, .env.local, .env.production
+  /\.pem$/i,               // Private keys
+  /\.key$/i,               // Private keys
+  /\.p12$/i,               // PKCS12 certs
+  /\.pfx$/i,               // PFX certs
+  /id_rsa/i,               // SSH keys
+  /\.db$/i,                // Database files
+  /\.sqlite$/i,            // SQLite databases
+  /credentials/i,          // Credential files
+  /secrets?\./i,           // Secret files
+  /\.npmrc$/i,             // npm config (may have tokens)
+  /\.netrc$/i,             // Network credentials
+  /\.git\//,               // Git internals
+  /node_modules\//,        // Dependencies
+  /package-lock\.json$/i,  // Lock files (noise, no value)
 ];
 
 function isPathSafe(target: string): boolean {
@@ -156,7 +186,7 @@ async function getEmbeddings(inputs: string[], model: string): Promise<number[][
       method: 'POST',
       signal: abort.signal,
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ model, input: inputs }),
@@ -165,21 +195,13 @@ async function getEmbeddings(inputs: string[], model: string): Promise<number[][
       const body = await res.text().catch(() => '');
       throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API error ${res.status}: ${body}`, res.status);
     }
-    const data = (await res.json()) as { data?: { index: number; embedding: number[] }[] };
+    const data = await res.json() as { data?: { index: number; embedding: number[] }[] };
     if (!Array.isArray(data.data) || data.data.length !== inputs.length) {
-      throw new RagError(
-        ErrorCodes.RAG_EMBEDDING_FAILED,
-        `Embedding API returned ${data.data?.length ?? 0} vectors for ${inputs.length} inputs`,
-        502,
-      );
+      throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, `Embedding API returned ${data.data?.length ?? 0} vectors for ${inputs.length} inputs`, 502);
     }
     data.data.sort((a, b) => a.index - b.index);
-    const embeddings = data.data.map((d) => d.embedding);
-    if (
-      embeddings.some(
-        (e) => !Array.isArray(e) || e.length === 0 || e.some((v) => typeof v !== 'number' || !Number.isFinite(v)),
-      )
-    ) {
+    const embeddings = data.data.map(d => d.embedding);
+    if (embeddings.some(e => !Array.isArray(e) || e.length === 0 || e.some(v => typeof v !== 'number' || !Number.isFinite(v)))) {
       throw new RagError(ErrorCodes.RAG_EMBEDDING_FAILED, 'Embedding API returned invalid vectors', 502);
     }
     return embeddings;
@@ -211,8 +233,7 @@ export class RagEngine {
     let current = '';
     let currentSection = '';
 
-    const prefixed = (section: string, body: string) =>
-      section ? `[section: ${section}]\n${body.trim()}` : body.trim();
+    const prefixed = (section: string, body: string) => section ? `[section: ${section}]\n${body.trim()}` : body.trim();
     const push = () => {
       const chunk = prefixed(currentSection, current);
       if (chunk && chunks[chunks.length - 1] !== chunk) chunks.push(chunk);
@@ -272,7 +293,7 @@ export class RagEngine {
   }
 
   private sentences(text: string): string[] {
-    return text.match(/[^.!?]+[.!?]+\s*|[^.!?]+$/g)?.filter((s) => s.trim()) ?? [text];
+    return text.match(/[^.!?]+[.!?]+\s*|[^.!?]+$/g)?.filter(s => s.trim()) ?? [text];
   }
 
   private overlap(text: string, maxChars: number): string {
@@ -291,8 +312,7 @@ export class RagEngine {
       if (!block) continue;
       const [firstLine = '', ...restLines] = block.split('\n');
       const rest = restLines.join('\n').trim();
-      const heading =
-        firstLine.match(/^#{1,2}\s+(.+)$/)?.[1] ?? (rest || i < blocks.length - 1 ? this.titleLine(firstLine) : null);
+      const heading = firstLine.match(/^#{1,2}\s+(.+)$/)?.[1] ?? (rest || i < blocks.length - 1 ? this.titleLine(firstLine) : null);
       if (heading) {
         section = heading.trim();
         if (rest) out.push({ section, text: rest });
@@ -309,8 +329,7 @@ export class RagEngine {
 
   private wrapSnippet(label: string, text: string): string {
     const maxLen = this.maxContentChars;
-    const truncated =
-      text.length > maxLen ? text.slice(0, maxLen) + `\n... [truncado - el contenido excede el maximo]` : text;
+    const truncated = text.length > maxLen ? text.slice(0, maxLen) + `\n... [truncado - el contenido excede el maximo]` : text;
     return `--- ${label} ---\n${truncated}\n`;
   }
 
@@ -328,8 +347,8 @@ export class RagEngine {
     this.vectorIndex = null;
     this.vectorIndexChunkCount = -1;
     const chunks = this.splitIntoChunks(content)
-      .map((chunkText) => ({ chunkText, chunkHash: sha256(chunkText) }))
-      .filter((chunk, index, all) => all.findIndex((c) => c.chunkHash === chunk.chunkHash) === index);
+      .map(chunkText => ({ chunkText, chunkHash: sha256(chunkText) }))
+      .filter((chunk, index, all) => all.findIndex(c => c.chunkHash === chunk.chunkHash) === index);
 
     let hasEmbeddings = false;
     const batchSize = 20;
@@ -337,7 +356,7 @@ export class RagEngine {
       const batch = chunks.slice(i, i + batchSize);
       let embeddings: number[][] | null = null;
       try {
-        embeddings = await this.getEmbeddingsWithRetry(batch.map((c) => c.chunkText));
+        embeddings = await this.getEmbeddingsWithRetry(batch.map(c => c.chunkText));
         hasEmbeddings = true;
       } catch (err) {
         logger.warn({ err, source, start: i, end: i + batch.length }, '[RagEngine] Error embebiendo lote');
@@ -355,9 +374,7 @@ export class RagEngine {
         });
       }
     }
-    logger.info(
-      `[RagEngine] Indexados ${chunks.length} chunks para "${source}"${hasEmbeddings ? ' con embeddings' : ' sin embeddings'}`,
-    );
+    logger.info(`[RagEngine] Indexados ${chunks.length} chunks para "${source}"${hasEmbeddings ? ' con embeddings' : ' sin embeddings'}`);
   }
 
   /** Load documents from sources, chunk, store, and embed. */
@@ -366,9 +383,6 @@ export class RagEngine {
       logger.warn(`[RagEngine] Reemplazando ${this.loadedContent.length} fuentes cargadas anteriormente.`);
     }
     this.loadedContent = [];
-    // Reset vector index state atomically with content replacement
-    this.vectorIndex = null;
-    this.vectorIndexChunkCount = -1;
 
     for (const source of sources) {
       try {
@@ -393,15 +407,9 @@ export class RagEngine {
               logger.warn(`[RagEngine] Path blocked (outside RAG root or symlink escape): ${source.path}`);
               break;
             }
-            // Validate pattern format: must be *.ext with alphanumeric extension
-            const patternMatch = source.pattern.match(/^\*\.([a-zA-Z0-9]+)$/);
-            if (!patternMatch) {
-              logger.warn(`[RagEngine] Invalid directory pattern (must be *.ext): ${source.pattern}`);
-              break;
-            }
-            const ext = '.' + patternMatch[1];
             const resolved = path.resolve(source.path);
-            const files = fs.readdirSync(resolved).filter((f) => f.endsWith(ext));
+            const ext = source.pattern.replace('*.', '.');
+            const files = fs.readdirSync(resolved).filter(f => f.endsWith(ext));
             for (const file of files) {
               const filePath = path.join(resolved, file);
               if (!isFileAllowed(filePath)) {
@@ -414,9 +422,7 @@ export class RagEngine {
                 this.loadedContent.push(this.wrapSnippet(label, content));
                 await this.indexContent(label, content);
               } catch (err: unknown) {
-                logger.warn(
-                  `[RagEngine] Error leyendo ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
-                );
+                logger.warn(`[RagEngine] Error leyendo ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
               }
             }
             break;
@@ -476,9 +482,7 @@ export class RagEngine {
         }
       } catch (err: unknown) {
         const extra = source.type === 'web_url' ? ` (${(source as { url: string }).url})` : '';
-        logger.warn(
-          `[RagEngine] Error procesando fuente ${source.type}${extra}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        logger.warn(`[RagEngine] Error procesando fuente ${source.type}${extra}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -500,20 +504,8 @@ export class RagEngine {
 
     const count = this.store.getChunksCount();
     if (!this.vectorIndex || this.vectorIndexChunkCount !== count) {
-      const chunks = this.store.getChunksWithEmbeddings();
-      // VectorIndex expects DocumentChunk-like objects with embedding
-      this.vectorIndex = new VectorIndex(
-        chunks.map((c) => ({
-          id: 0,
-          source: '',
-          chunk_index: 0,
-          chunk_hash: null,
-          content_hash: null,
-          created_at: '',
-          chunk_text: c.chunk_text,
-          embedding: c.embedding,
-        })),
-      );
+      const chunks = this.store.getAllChunks().filter(c => c.embedding);
+      this.vectorIndex = new VectorIndex(chunks);
       this.vectorIndexChunkCount = count;
     }
 
@@ -529,11 +521,9 @@ export class RagEngine {
       const results = await this.searchSimilar(query);
       if (results.length > 0) {
         const context = results
-          .map((r) => `[relevancia: ${(r.score * 100).toFixed(0)}%]\n${r.text}`)
+          .map(r => `[relevancia: ${(r.score * 100).toFixed(0)}%]\n${r.text}`)
           .join('\n\n---\n\n');
-        logger.info(
-          `[RagEngine] Busqueda semantica: ${results.length} resultados para query "${query.slice(0, 60)}..."`,
-        );
+        logger.info(`[RagEngine] Busqueda semantica: ${results.length} resultados para query "${query.slice(0, 60)}..."`);
         return `## Contexto RAG (busqueda semantica):\n\n${context}`;
       }
     }
