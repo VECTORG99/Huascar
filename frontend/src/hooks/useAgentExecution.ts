@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { apiUrl } from "@/lib/api";
+import { apiUrl, authHeaders } from "@/lib/api";
 import type { AgentConfig, ExecutionResponse } from "@/types/agent";
 
 const initialLogs = [
@@ -48,7 +48,7 @@ export function useAgentExecution(
       }
       const res = await fetch(`${apiUrl}/api/agent/execute/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(body)
       });
 
