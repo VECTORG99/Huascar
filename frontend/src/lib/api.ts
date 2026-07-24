@@ -1,7 +1,7 @@
 import type { AgentConfig, AgentRole, HistoryRecord } from "@/types/agent";
 import type { CreatorAnswers, CreatorCatalog, CreatorEvaluation, CreatorWorkflow, GeneratedAgentBundle, RegisteredAgent } from "@/types/creator";
 
-export const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://huascar.onrender.com";
+export const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
 
 export async function getRoles(): Promise<AgentRole[] | null> {
   const res = await fetch(`${apiUrl}/api/roles`);
