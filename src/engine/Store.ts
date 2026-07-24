@@ -348,6 +348,20 @@ export class Store {
     }));
   }
 
+  /** Get chunks with embeddings only (for vector index building). */
+  getChunksWithEmbeddings(): { chunk_text: string; embedding: number[] }[] {
+    this.assertOpen();
+    const rows = this.db
+      .prepare(
+        'SELECT chunk_text, embedding FROM rag_documents WHERE embedding IS NOT NULL ORDER BY source, chunk_index',
+      )
+      .all() as any[];
+    return rows.map((r) => ({
+      chunk_text: r.chunk_text,
+      embedding: JSON.parse(r.embedding) as number[],
+    }));
+  }
+
   getChunksCount(): number {
     this.assertOpen();
     const row = this.db.prepare('SELECT COUNT(*) as count FROM rag_documents').get() as { count: number };
