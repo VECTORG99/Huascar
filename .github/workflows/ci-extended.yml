@@ -53,15 +53,3 @@ jobs:
           echo "Backend failed to start within 30s"
           docker logs test-backend
           exit 1
-
-  deploy-check:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
-    needs: [coverage, docker-build]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy readiness check
-        run: |
-          echo "All checks passed — ready for deployment"
-          echo "Docker images built and verified"
-          echo "Coverage report generated"
