@@ -2,9 +2,19 @@
 
 All notable changes to this project are documented here.
 
+### Documentation
+
+- Add migration notice to README
+
+## [v1.5.10] - 2026-07-28
+
 ### Bug Fixes
 
 - Remove extra brace in generator.ts
+
+### Chores
+
+- V1.5.10 [skip ci] _(release)_
 
 ### Other
 

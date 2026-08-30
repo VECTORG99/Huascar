@@ -1,6 +1,6 @@
 {
   "name": "artemisa",
-  "version": "1.5.10",
+  "version": "1.5.11",
   "description": "Plataforma open-source para diseñar agentes de desarrollo y operación mediante un arbol de decisiones",
   "license": "MPL-2.0",
   "private": true,
