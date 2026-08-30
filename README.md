@@ -3,10 +3,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/VECTORG99/Artemisa/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/VECTORG99/Artemisa/ci.yml?branch=master&style=for-the-badge&label=CI&color=8b5cf6" alt="CI" /></a>
+  <a href="https://github.com/HackTheWorld-Team/Artemisa/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/HackTheWorld-Team/Artemisa/ci.yml?branch=master&style=for-the-badge&label=CI&color=8b5cf6" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MPL--2.0-8b5cf6?style=for-the-badge" alt="License: MPL-2.0" /></a>
   <a href="https://artemisa-ai.netlify.app"><img src="https://img.shields.io/badge/Homepage-artemisa--ai.netlify.app-8b5cf6?style=for-the-badge" alt="Homepage" /></a>
 </p>
+
+> [!WARNING]
+> **REPOSITORIO MIGRADO**: Este repositorio ha sido migrado a la organización **HackTheWorld-Team** y ya no recibirá actualizaciones.
+> Por favor, dirígete a: **[github.com/HackTheWorld-Team/Artemisa](https://github.com/HackTheWorld-Team/Artemisa)** para ver el código más reciente, abrir issues o enviar pull requests.
 
 > [!IMPORTANT]
 > Construido para el Hackathon Kiro x Código Facilito 2026. El proyecto se desarrolló íntegramente con **Kiro** como IDE agentic.
